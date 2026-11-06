@@ -80,6 +80,7 @@ async function unlock(event) {
 }
 
 function lock() {
+  stopSpeaking();
   J = null; KEY = null;
   window.location.reload(); // drops every decrypted value and the key from memory
 }
@@ -242,7 +243,9 @@ function coachChip(daily) {
   card.addEventListener("click", () => show("coach"));
   const [cls, text] = CALLS[daily.call] || ["good", "Coach"];
   const top = el("div", "coach-top");
-  top.append(el("span", "tile-label", "Coach · today"), el("span", "status " + cls, text));
+  const who = el("span", "chip-who");
+  who.append(coachAvatar(daily.call, 28), el("span", "tile-label", "Coach · today"));
+  top.append(who, el("span", "status " + cls, text));
   card.append(top, el("div", "coach-headline", daily.headline));
   if (daily.plan) card.append(el("div", "stat-sub", planText(daily.plan)));
   return card;
@@ -391,6 +394,8 @@ function renderHome() {
 
   const daily = J.coach && J.coach.daily && J.coach.daily.date === iso(now) ? J.coach.daily : null;
   if (daily) v.append(coachChip(daily));
+  const wc = wrappedCard();
+  if (wc) v.append(wc);
   v.append(weekCard());
   v.append(recoveryCard());
 
@@ -426,18 +431,115 @@ function renderHome() {
 // The coach's words are short; the numbers around them are drawn here from Garmin data (no AI).
 
 const TAGS = { good: ["good", "✓"], watch: ["watch", "!"], tip: ["advice", "→"] };
+const MOOD_TEXT = { push: "Fired up", normal: "Ready", easy: "Careful today", rest: "Rest mode" };
+let avatarSeq = 0;
+const chatSeen = new Set();   // chats already played with the typing effect this session
+const reducedMotion = () => window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** The coach, drawn here (no image files): his face follows the day's call. */
+function coachAvatar(mood, size) {
+  mood = MOOD_TEXT[mood] ? mood : "normal";
+  const id = "avclip" + (++avatarSeq);
+  const root = svg("svg", { viewBox: "0 0 64 64", width: size, height: size, class: "avatar m-" + mood, "aria-hidden": "true" });
+  const clip = svg("clipPath", { id }, svg("defs", {}, root));
+  svg("circle", { cx: 32, cy: 32, r: 32 }, clip);
+  const g = svg("g", { "clip-path": `url(#${id})` }, root);
+  svg("rect", { x: 0, y: 0, width: 64, height: 64, class: "av-bg" }, g);
+  svg("path", { d: "M6 66c0-12 11-18 26-18s26 6 26 18z", class: "av-shirt" }, g);
+  svg("path", { d: "M27.5 49h9v-7h-9z", class: "av-skin" }, g);
+  svg("path", { d: "M24 48.5l8 8.5 8-8.5", class: "av-cord" }, g);
+  svg("rect", { x: 29.5, y: 55.5, width: 7, height: 4, rx: 2, class: "av-whistle" }, g);
+  svg("circle", { cx: 32, cy: 31, r: 15, class: "av-skin" }, g);
+  svg("path", { d: "M17.2 33.5c1.2 8.5 6.6 12.5 14.8 12.5s13.6-4 14.8-12.5c-2.4 3.6-7 5.6-14.8 5.6s-12.4-2-14.8-5.6z", class: "av-beard" }, g);
+  svg("path", { d: "M17 30c-.6-10 6.4-16 15-16s15.6 6 15 16c-3.2-4-8.4-6.2-15-6.2S20.2 26 17 30z", class: "av-hair" }, g);
+  svg("rect", { x: 16.6, y: 22.2, width: 30.8, height: 4.6, rx: 2.3, class: "av-band" }, g);
+  const line = (d) => svg("path", { d, class: "av-line" }, g);
+  if (mood === "rest") {
+    line("M23.5 31.5q2.5 2 5 0"); line("M35.5 31.5q2.5 2 5 0");
+    const z = svg("text", { x: 47, y: 16, class: "av-z" }, g); z.textContent = "z";
+  } else {
+    svg("circle", { cx: 26, cy: 31.5, r: 1.9, class: "av-eye" }, g);
+    svg("circle", { cx: 38, cy: 31.5, r: 1.9, class: "av-eye" }, g);
+  }
+  const brows = { push: ["M22.5 27l6 1.6", "M41.5 27l-6 1.6"], normal: ["M23 27.6q3-1.4 6 0", "M35 27.6q3-1.4 6 0"],
+    easy: ["M23 28.4l6-1.8", "M41 28.4l-6-1.8"], rest: ["M23 28q3-.8 6 0", "M35 28q3-.8 6 0"] }[mood];
+  brows.forEach(line);
+  const mouth = svg("g", { class: "av-mouth" }, g);
+  if (mood === "push") svg("path", { d: "M25.5 37.2q6.5 7 13 0z", class: "av-open" }, mouth);
+  else svg("path", { d: { normal: "M27 37.8q5 4 10 0", easy: "M28 39q4 1 8 0", rest: "M28.5 38.4q3.5 2.6 7 0" }[mood], class: "av-line" }, mouth);
+  return root;
+}
+
+function speakable() { return "speechSynthesis" in window && typeof SpeechSynthesisUtterance === "function"; }
+function stopSpeaking() { if (speakable()) window.speechSynthesis.cancel(); }
+
+/** Reads text aloud with the iPhone's own voice; nothing leaves the device. */
+function listenButton(text, avatar) {
+  const btn = el("button", "listen", "🔊 Listen");
+  btn.type = "button";
+  btn.addEventListener("click", () => {
+    const s = window.speechSynthesis;
+    if (s.speaking) { s.cancel(); return; }
+    const u = new SpeechSynthesisUtterance(text);
+    const voices = s.getVoices().filter((x) => /^en[-_]/i.test(x.lang));
+    u.voice = voices.find((x) => /Daniel|Arthur|Aaron|Alex|Samantha/.test(x.name)) || voices[0] || null;
+    u.lang = (u.voice && u.voice.lang) || "en-US";
+    u.rate = 1.02;
+    const done = () => { avatar.classList.remove("talking"); btn.textContent = "🔊 Listen"; };
+    u.onstart = () => { avatar.classList.add("talking"); btn.textContent = "■ Stop"; };
+    u.onend = done; u.onerror = done;
+    s.speak(u);
+  });
+  return btn;
+}
+
+function itemOf(it, tag) { return typeof it === "string" ? { tag: tag || "tip", text: it } : it; }
 
 /** Tagged one-liners; older reports were plain strings. */
 function items(list, tag) {
   const ul = el("ul", "citems");
   for (const it of list || []) {
-    const o = typeof it === "string" ? { tag: tag || "tip", text: it } : it;
+    const o = itemOf(it, tag);
     const [cls, mark] = TAGS[o.tag] || TAGS.tip;
     const li = el("li", "citem " + cls);
     li.append(el("span", "cmark", mark), el("span", null, o.text));
     ul.append(li);
   }
   return ul;
+}
+
+function bubble(o) {
+  if (o.big) return el("div", "bubble big", o.text);
+  const [cls, mark] = TAGS[o.tag] || TAGS.tip;
+  const b = el("div", "bubble " + cls);
+  b.append(el("span", "cmark", mark), el("span", null, o.text));
+  return b;
+}
+
+/** Messages appear one by one with a typing indicator, once per session. */
+function playChat(box, msgs, key, after) {
+  if (chatSeen.has(key) || reducedMotion()) {
+    for (const m of msgs) box.append(bubble(m));
+    after.forEach((x) => x.classList.remove("later"));
+    return;
+  }
+  chatSeen.add(key);
+  let i = 0;
+  const next = () => {
+    if (!box.isConnected && i > 0) return;
+    if (i >= msgs.length) { after.forEach((x) => x.classList.add("reveal")); after.forEach((x) => x.classList.remove("later")); return; }
+    const typing = el("div", "bubble typing");
+    typing.append(el("i"), el("i"), el("i"));
+    box.append(typing);
+    setTimeout(() => {
+      const b = bubble(msgs[i]);
+      b.classList.add("pop");
+      typing.replaceWith(b);
+      i++;
+      setTimeout(next, 180);
+    }, i === 0 ? 650 : 520);
+  };
+  next();
 }
 
 function planBox(plan, title) {
@@ -491,12 +593,13 @@ function signals() {
   return grid;
 }
 
-/** Minutes per type since a date. */
-function mix(from) {
+/** Minutes per type in [from, to). */
+function mix(from, to) {
   const mins = { training: 0, padel: 0, run: 0, other: 0 };
   let sessions = 0;
   for (const a of J.activities || []) {
-    if (parseDay(a.date) < from) continue;
+    const d = parseDay(a.date);
+    if (d < from || (to && d >= to)) continue;
     mins[groupOf(a).key] += a.min || 0;
     sessions++;
   }
@@ -553,21 +656,29 @@ function loadChart() {
 function vsRecent(a) {
   const prev = (J.activities || []).filter((x) => x.id !== a.id && groupOf(x).key === groupOf(a).key && x.date < a.date).slice(0, 6);
   const kv = el("div", "kv kv-cmp");
-  const cell = (label, val, base, fmt, higherIsHarder) => {
+  const cell = (label, val, base, fmt) => {
     const d = el("div");
     d.append(el("b", null, typeof val === "number" ? fmt(val) : "–"), el("span", null, label));
     if (typeof val === "number" && base) {
-      const diff = val - base;
-      const em = el("em", Math.abs(diff) / base < 0.03 ? "" : higherIsHarder && diff > 0 ? "hard" : "easy",
-        Math.abs(diff) / base < 0.03 ? "≈ usual" : (diff > 0 ? "▲ " : "▼ ") + fmt(Math.abs(diff)));
-      d.append(em);
+      const diff = val - base, same = Math.abs(diff) / base < 0.03;
+      d.append(el("em", same ? "" : diff > 0 ? "hard" : "easy", same ? "≈ usual" : (diff > 0 ? "▲ " : "▼ ") + fmt(Math.abs(diff))));
     }
     kv.append(d);
   };
-  cell("avg HR", a.hr, avg(prev.map((x) => x.hr)), (x) => String(Math.round(x)), true);
-  cell("kcal", a.kcal, avg(prev.map((x) => x.kcal)), (x) => String(Math.round(x)), true);
-  cell("aerobic TE", a.te, avg(prev.map((x) => x.te)), (x) => x.toFixed(1), true);
+  cell("avg HR", a.hr, avg(prev.map((x) => x.hr)), (x) => String(Math.round(x)));
+  cell("kcal", a.kcal, avg(prev.map((x) => x.kcal)), (x) => String(Math.round(x)));
+  cell("aerobic TE", a.te, avg(prev.map((x) => x.te)), (x) => x.toFixed(1));
   return kv;
+}
+
+function coachHead(mood, title, sub, speech) {
+  const head = el("div", "coach-head");
+  const av = coachAvatar(mood, 52);
+  const who = el("div", "coach-who");
+  who.append(el("b", null, title), el("span", null, sub));
+  head.append(av, who);
+  if (speech && speakable()) head.append(listenButton(speech, av));
+  return head;
 }
 
 function renderCoach() {
@@ -583,14 +694,23 @@ function renderCoach() {
 
   if (c.daily) {
     const d = c.daily;
+    const isToday = d.date === iso(new Date());
     const card = el("div", "card coach-today");
     const [cls, text] = CALLS[d.call] || ["good", ""];
-    const top = el("div", "coach-top");
-    top.append(el("span", "tile-label", d.date === iso(new Date()) ? "Today" : shortDay(d.date)), el("span", "call " + cls, text));
-    card.append(top, el("div", "coach-big", d.headline));
-    if (d.date === iso(new Date())) card.append(signals());
-    card.append(items(d.points), planBox(d.plan, "Today's plan"));
+    const points = (d.points || []).map((p) => itemOf(p));
+    const speech = [d.headline, ...points.map((p) => p.text),
+      typeof d.plan === "string" ? "Plan: " + d.plan : "Today's plan: " + (d.plan || []).map((p) => `${p.what}, ${p.detail}`).join(". ")].join(". ");
+    const head = coachHead(d.call, "Coach", (isToday ? "Today" : shortDay(d.date)) + " · " + (MOOD_TEXT[d.call] || ""), speech);
+    const pill = el("span", "call " + cls, text);
+    card.append(head, pill);
+    const chat = el("div", "chat");
+    card.append(chat);
+    const later = [];
+    if (isToday) later.push(signals());
+    later.push(planBox(d.plan, "Today's plan"));
+    later.forEach((x) => { x.classList.add("later"); card.append(x); });
     v.append(card);
+    playChat(chat, [{ big: true, text: d.headline }, ...points], "daily|" + d.date + "|" + d.headline, later);
   }
   v.append(loadChart());
 
@@ -598,7 +718,8 @@ function renderCoach() {
     const w = c.weekly;
     v.append(el("h2", "section-title", "This week"));
     const card = el("div", "card");
-    card.append(el("div", "tile-label", "Week of " + shortDay(w.week)), el("div", "coach-big", w.headline));
+    const speech = [w.headline, ...(w.wins || []), ...(w.watch || []), ...(w.focus || [])].map((x) => (typeof x === "string" ? x : x.text)).join(". ");
+    card.append(coachHead("normal", "Weekly review", "Week of " + shortDay(w.week), speech), el("div", "coach-big", w.headline));
     const m = mix(weekStart(new Date()));
     card.append(donut(m, fmtMin(m.total), m.sessions === 1 ? "1 session" : m.sessions + " sessions"));
     card.append(items(w.wins, "good"), items(w.watch, "watch"), items(w.focus, "tip"));
@@ -1114,6 +1235,9 @@ function renderTrends() {
     tip: (i) => (hrv[i] !== null ? [hrv[i] + " ms", shortDay(labels[i])] : null),
   }));
 
+  const wl = wrappedList();
+  if (wl) { v.append(el("h2", "section-title", "Wrapped")); v.append(wl); }
+
   const other = (J.records || []).filter((r) => r.kind !== "time" && r.kind !== "distance");
   if (other.length) {
     v.append(el("h2", "section-title", "Other records"));
@@ -1121,11 +1245,292 @@ function renderTrends() {
   }
 }
 
+// ---------- Wrapped ----------
+// Monthly and yearly story slides, all computed here from the journal (the coach adds one caption).
+
+const SLIDE_MS = 6500;
+
+function actsIn(from, to) {
+  return (J.activities || []).filter((a) => { const d = parseDay(a.date); return d >= from && d < to; });
+}
+
+/** Finished months of the last year, plus finished years (and this year from December). */
+function wrappedPeriods() {
+  const now = new Date();
+  const out = [];
+  for (let k = 1; k <= 12; k++) {
+    const from = new Date(now.getFullYear(), now.getMonth() - k, 1);
+    const to = new Date(now.getFullYear(), now.getMonth() - k + 1, 1);
+    if (!actsIn(from, to).length) continue;
+    out.push({ kind: "month", key: `${from.getFullYear()}-${pad(from.getMonth() + 1)}`, from, to,
+      name: from.toLocaleDateString(undefined, { month: "long" }),
+      long: from.toLocaleDateString(undefined, { month: "long", year: "numeric" }) });
+  }
+  for (const y of [now.getFullYear(), now.getFullYear() - 1]) {
+    if (y === now.getFullYear() && now.getMonth() < 11) continue;
+    const from = new Date(y, 0, 1), to = new Date(y + 1, 0, 1);
+    if (actsIn(from, to).length) out.unshift({ kind: "year", key: String(y), from, to, name: String(y), long: String(y) });
+  }
+  return out;
+}
+
+function longestStreak(acts) {
+  const days = [...new Set(acts.map((a) => a.date.slice(0, 10)))].sort();
+  let best = 0, run = 0, prev = null;
+  for (const d of days) {
+    run = prev && (parseDay(d) - parseDay(prev)) / 864e5 === 1 ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+  return best;
+}
+
+function wrappedStats(p) {
+  const acts = actsIn(p.from, p.to);
+  const before = (J.activities || []).filter((a) => parseDay(a.date) < p.from);
+  const len = p.to - p.from;
+  const prevActs = actsIn(new Date(p.from - len), p.from);
+  const s = {
+    acts, sessions: acts.length, minutes: acts.reduce((x, a) => x + (a.min || 0), 0),
+    kcal: acts.reduce((x, a) => x + (a.kcal || 0), 0),
+    prevSessions: prevActs.length, prevMinutes: prevActs.reduce((x, a) => x + (a.min || 0), 0),
+    mix: mix(p.from, p.to), streak: longestStreak(acts),
+  };
+  // Movement totals from logged classes.
+  const vol = new Map();
+  for (const a of acts) for (const r of a.rounds || []) for (const x of r.sets) {
+    if (x.rest || !x.n) continue;
+    const key = x.ex + "|" + (x.unit || "reps");
+    vol.set(key, (vol.get(key) || 0) + x.n);
+  }
+  s.moves = [...vol].map(([k, n]) => ({ ex: k.split("|")[0], unit: k.split("|")[1], n })).sort((a, b) => b.n - a.n);
+  s.reps = s.moves.filter((m) => m.unit === "reps").reduce((x, m) => x + m.n, 0);
+  s.meters = s.moves.filter((m) => m.unit === "m").reduce((x, m) => x + m.n, 0);
+  s.cals = s.moves.filter((m) => m.unit === "cal").reduce((x, m) => x + m.n, 0);
+  // Hardest session: highest average heart rate over at least 20 minutes.
+  s.hardest = acts.filter((a) => a.hr && a.min >= 20).sort((a, b) => b.hr - a.hr)[0] || null;
+  // PRs: loads beyond every earlier best, max efforts, running records.
+  const bestBefore = new Map();
+  for (const a of before) for (const r of a.rounds || []) for (const x of r.sets) {
+    if (x.kg && x.kg > (bestBefore.get(x.ex) || 0)) bestBefore.set(x.ex, x.kg);
+  }
+  const loads = new Map();
+  for (const a of acts) for (const r of a.rounds || []) for (const x of r.sets) {
+    if (x.kg && bestBefore.has(x.ex) && x.kg > bestBefore.get(x.ex) && x.kg > (loads.get(x.ex) || 0)) loads.set(x.ex, x.kg);
+  }
+  s.prs = [...loads].map(([ex, kg]) => `${ex} ${kg} kg`);
+  const inP = (d) => d && parseDay(d) >= p.from && parseDay(d) < p.to;
+  for (const e of maxEfforts()) if (inP(e.date)) s.prs.push(`${e.ex} ${e.n === 1 && e.kg ? e.kg + " kg" : e.n + " " + (e.unit || "reps")} · ${fmtWindow(e.win)}`);
+  for (const r of J.records || []) if ((r.kind === "time" || r.kind === "distance") && inP(r.date)) {
+    s.prs.push(`${r.label} ${r.kind === "time" ? fmtClock(r.value) : (r.value / 1000).toFixed(2) + " km"}`);
+  }
+  // Busiest week.
+  const weeks = new Map();
+  for (const a of acts) { const k = iso(weekStart(parseDay(a.date))); weeks.set(k, (weeks.get(k) || 0) + (a.min || 0)); }
+  s.busiest = [...weeks].sort((a, b) => b[1] - a[1])[0] || null;
+  // Padel.
+  const padel = acts.filter((a) => groupOf(a).key === "padel");
+  s.padel = { n: padel.length, min: padel.reduce((x, a) => x + (a.min || 0), 0), kcal: padel.reduce((x, a) => x + (a.kcal || 0), 0) };
+  // Sleep (the journal keeps 90 days of nights).
+  const nights = Object.entries(J.days || {}).filter(([k, d]) => inP(k) && d.sleep && d.sleep.sec);
+  s.sleep = nights.length >= 5 ? {
+    avg: avg(nights.map(([, d]) => d.sleep.sec)),
+    best: nights.filter(([, d]) => d.sleep.score).sort((a, b) => b[1].sleep.score - a[1].sleep.score)[0] || null,
+  } : null;
+  // Year: the strongest month.
+  if (p.kind === "year") {
+    const months = new Array(12).fill(0);
+    for (const a of acts) months[parseDay(a.date).getMonth()] += a.min || 0;
+    const m = months.indexOf(Math.max(...months));
+    s.topMonth = { name: new Date(2000, m, 1).toLocaleDateString(undefined, { month: "long" }), min: months[m] };
+  }
+  return s;
+}
+
+/** Big numbers count up when the slide opens. */
+function countUp(node, value, fmt) {
+  node.textContent = fmt(value);
+  if (reducedMotion() || !value) return;
+  const start = performance.now(), dur = 900;
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / dur);
+    node.textContent = fmt(value * (1 - Math.pow(1 - k, 3)));
+    if (k < 1 && node.isConnected) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+function slide(bg, kicker, big, sub, extra) {
+  const sl = el("div", "w-slide w-bg" + bg);
+  sl.append(el("div", "w-kicker", kicker));
+  if (big) {
+    const b = el("div", "w-big");
+    b.dataset.count = "1";
+    sl.append(b);
+    sl._count = () => countUp(b, big[0], big[1]);
+  }
+  if (sub) sl.append(el("div", "w-sub", sub));
+  if (extra) sl.append(extra);
+  return sl;
+}
+
+function wList(rows) {
+  const ul = el("ul", "w-list");
+  for (const [a, b] of rows) { const li = el("li"); li.append(el("span", null, a), el("b", null, b)); ul.append(li); }
+  return ul;
+}
+
+function wrappedSlides(p) {
+  const s = wrappedStats(p);
+  const n0 = (x) => fmtInt(x);
+  const slides = [];
+  const span = p.kind === "year" ? "year" : "month";
+
+  slides.push(slide(1, p.kind === "year" ? "Your year in training" : "Your month in training",
+    null, null, (() => { const t = el("div", "w-title", p.long); return t; })()));
+
+  const delta = s.prevSessions ? s.sessions - s.prevSessions : null;
+  slides.push(slide(2, "You showed up", [s.sessions, n0], `sessions · ${fmtMin(s.minutes)} of training`,
+    el("div", "w-note", delta === null ? "" : delta > 0 ? `▲ ${delta} more than last ${span}` : delta < 0 ? `▼ ${-delta} fewer than last ${span}` : `Same as last ${span}`)));
+
+  const d = donut(s.mix, fmtMin(s.mix.total), "by type");
+  d.classList.add("w-donut");
+  slides.push(slide(3, "Where the time went", null, null, d));
+
+  if (s.moves.length) {
+    const top = s.moves.filter((m) => m.unit === "reps").slice(0, 3);
+    const rows = top.map((m) => [m.ex, n0(m.n) + " reps"]);
+    if (s.meters) rows.push(["Meters (run, row, sled…)", n0(s.meters) + " m"]);
+    if (s.cals) rows.push(["Machine calories", n0(s.cals) + " cal"]);
+    slides.push(slide(4, "You moved", [s.reps, n0], "reps in logged classes", wList(rows)));
+  }
+
+  slides.push(slide(5, "You burned", [s.kcal, n0], "active kcal",
+    el("div", "w-note", `≈ ${n0(s.kcal / 285)} slices of pizza 🍕`)));
+
+  if (s.hardest) {
+    const h = s.hardest;
+    slides.push(slide(2, "Your hardest session", [h.hr, (x) => Math.round(x) + ""], "avg heart rate",
+      wList([[h.name || h.label, shortDay(h.date)], ["Time", fmtMin(h.min)], ["Calories", n0(h.kcal) + " kcal"]])));
+  }
+
+  if (s.prs.length) {
+    slides.push(slide(3, "New bests", [s.prs.length, n0], s.prs.length === 1 ? "personal best" : "personal bests",
+      wList(s.prs.slice(0, 5).map((x) => ["🏆", x]))));
+  }
+
+  const rows = [["Longest streak", s.streak + (s.streak === 1 ? " day" : " days")]];
+  if (s.busiest) rows.push(["Busiest week", `${shortDay(s.busiest[0])} · ${fmtMin(s.busiest[1])}`]);
+  if (s.topMonth) rows.push(["Strongest month", `${s.topMonth.name} · ${fmtMin(s.topMonth.min)}`]);
+  slides.push(slide(4, "Consistency", [s.streak, n0], "days in a row, your best run", wList(rows)));
+
+  if (s.padel.n) {
+    slides.push(slide(2, "On the padel court", [s.padel.min / 60, (x) => x.toFixed(1)], "hours of padel",
+      wList([["Sessions", String(s.padel.n)], ["Calories", n0(s.padel.kcal) + " kcal"]])));
+  }
+  if (s.sleep) {
+    const rowsS = [["Average night", fmtHM(s.sleep.avg)]];
+    if (s.sleep.best) rowsS.push(["Best night", `${s.sleep.best[1].sleep.score} · ${shortDay(s.sleep.best[0])}`]);
+    slides.push(slide(1, "Recovery", [s.sleep.avg / 3600, (x) => x.toFixed(1)], "hours of sleep a night", wList(rowsS)));
+  }
+
+  const cap = ((J.coach || {}).wrapped || {})[p.key];
+  const end = slide(1, "Coach says", null, null);
+  const row = el("div", "w-coach");
+  row.append(coachAvatar("push", 64));
+  const bub = el("div", "bubble big", cap ? cap.line : `${s.sessions} sessions in ${p.name}. Keep stacking them.`);
+  row.append(bub);
+  if (cap && cap.title) end.append(el("div", "w-title", cap.title));
+  end.append(row);
+  slides.push(end);
+  return slides;
+}
+
+let wrapTimer = 0;
+
+function openWrapped(p) {
+  closeWrapped();
+  const slides = wrappedSlides(p);
+  const box = el("div", "wrapped");
+  box.id = "wrapped";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-label", "Wrapped " + p.long);
+  const bars = el("div", "w-bars");
+  slides.forEach(() => { const b = el("i"); b.append(el("span")); bars.append(b); });
+  const close = el("button", "w-close", "✕");
+  close.type = "button";
+  close.setAttribute("aria-label", "Close");
+  const stage = el("div", "w-stage");
+  const back = el("button", "w-tap left"); back.type = "button"; back.setAttribute("aria-label", "Previous");
+  const fwd = el("button", "w-tap right"); fwd.type = "button"; fwd.setAttribute("aria-label", "Next");
+  box.append(stage, back, fwd, bars, close);
+  document.body.append(box);
+  document.body.classList.add("no-scroll");
+
+  let i = 0;
+  const go = (k) => {
+    if (k < 0) k = 0;
+    if (k >= slides.length) { closeWrapped(); return; }
+    i = k;
+    stage.replaceChildren(slides[i]);
+    slides[i].classList.remove("enter"); void slides[i].offsetWidth; slides[i].classList.add("enter");
+    if (slides[i]._count) slides[i]._count();
+    [...bars.children].forEach((b, j) => { b.className = j < i ? "done" : j === i ? "on" : ""; });
+    clearTimeout(wrapTimer);
+    wrapTimer = setTimeout(() => go(i + 1), SLIDE_MS);
+  };
+  back.addEventListener("click", () => go(i - 1));
+  fwd.addEventListener("click", () => go(i + 1));
+  close.addEventListener("click", closeWrapped);
+  let x0 = null;
+  box.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  box.addEventListener("touchend", (e) => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0; x0 = null;
+    if (Math.abs(dx) > 50) go(i + (dx < 0 ? 1 : -1));
+  });
+  go(0);
+}
+
+function closeWrapped() {
+  clearTimeout(wrapTimer);
+  const w = $("wrapped");
+  if (w) w.remove();
+  document.body.classList.remove("no-scroll");
+}
+
+/** Home: the latest month's Wrapped during the first 10 days of a month. */
+function wrappedCard() {
+  if (new Date().getDate() > 10) return null;
+  const p = wrappedPeriods().find((x) => x.kind === "month");
+  const now = new Date();
+  if (!p || p.to.getMonth() !== now.getMonth()) return null;
+  const card = el("button", "card wrap-card");
+  card.type = "button";
+  card.append(el("span", "wrap-kicker", "📦 Wrapped"), el("b", null, `Your ${p.name} is ready`), el("span", "wrap-sub", "Tap to play"));
+  card.addEventListener("click", () => openWrapped(p));
+  return card;
+}
+
+/** Progress: every Wrapped there is. */
+function wrappedList() {
+  const ps = wrappedPeriods();
+  const box = el("div", "chips wrap-chips");
+  for (const p of ps) {
+    const b = el("button", "chip" + (p.kind === "year" ? " on" : ""), (p.kind === "year" ? "★ " : "") + p.long);
+    b.type = "button";
+    b.addEventListener("click", () => openWrapped(p));
+    box.append(b);
+  }
+  return ps.length ? box : null;
+}
+
 // ---------- shell ----------
 
 const RENDER = { home: renderHome, activity: renderActivity, sleep: renderSleep, trends: renderTrends, coach: renderCoach };
 
 function show(view, keepScroll) {
+  if (view !== current) stopSpeaking();
   current = view;
   for (const b of document.querySelectorAll(".tab")) b.classList.toggle("active", b.dataset.view === view);
   for (const key of Object.keys(RENDER)) $("view-" + key).hidden = key !== view;
