@@ -392,12 +392,12 @@ function renderHome() {
   v.append(el("h1", "large-title", `Good ${partOfDay(now.getHours())}${first ? ", " + first : ""}`),
     el("p", "eyebrow", dayName(now, { weekday: "long", day: "numeric", month: "long" })));
 
-  const daily = J.coach && J.coach.daily && J.coach.daily.date === iso(now) ? J.coach.daily : null;
-  if (daily) v.append(coachChip(daily));
+  const fresh = whatsNewStrip();
+  if (fresh) v.append(fresh);
+  v.append(heroCard());
   const wc = wrappedCard();
   if (wc) v.append(wc);
   v.append(weekCard());
-  v.append(recoveryCard());
 
   const hl = highlights();
   if (hl.length) {
@@ -416,7 +416,7 @@ function renderHome() {
   const last = (J.activities || [])[0];
   if (last) {
     v.append(el("h2", "section-title", "Latest workout"));
-    v.append(activityCard(last, true));
+    v.append(activityRow(last));
   }
   v.append(el("h2", "section-title", "Consistency"));
   v.append(weeksChart(8));
@@ -743,70 +743,6 @@ function renderCoach() {
 
 // ---------- Activity ----------
 
-function activityCard(a, open) {
-  const g = groupOf(a);
-  const card = el("details", "card act");
-  if (open) card.open = true;
-  const head = el("summary");
-  const badge = el("div", "badge g" + g.cls);
-  const icon = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, null);
-  for (const d of ICONS[g.key]) svg("path", { d }, icon);
-  badge.append(icon);
-  head.append(badge);
-  const main = el("div", "act-main");
-  main.append(el("div", "act-title", a.name || a.label));
-  const when = new Date(a.date.replace(" ", "T"));
-  main.append(el("div", "act-meta", [
-    a.label,
-    when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
-    Math.round(a.min) + " min",
-    a.kcal ? Math.round(a.kcal) + " kcal" : null,
-  ].filter(Boolean).join(" · ")));
-  head.append(main, el("span", "chev", "›"));
-  card.append(head);
-
-  const body = el("div", "act-body");
-  const kv = el("div", "kv");
-  const pair = (b, s) => { const d = el("div"); d.append(el("b", null, b), el("span", null, s)); kv.append(d); };
-  pair(fmtMS(a.min * 60), "Time");
-  pair(a.kcal ? Math.round(a.kcal) : "–", "kcal");
-  pair(a.hr ? Math.round(a.hr) : "–", "Avg HR");
-  pair(a.hrMax ? Math.round(a.hrMax) : "–", "Max HR");
-  pair(a.te ? a.te.toFixed(1) : "–", "Aerobic TE");
-  pair(a.km ? a.km.toFixed(2) + " km" : a.teAn ? a.teAn.toFixed(1) : "–", a.km ? "Distance" : "Anaerobic TE");
-  body.append(kv);
-
-  if (a.notes) {
-    const notes = el("div", "notes");
-    for (const line of a.notes.split("\n")) if (line.trim()) notes.append(el("p", null, line));
-    body.append(notes);
-  }
-  if (a.rounds && a.rounds.length) {
-    const ol = el("ol", "rounds");
-    for (const r of a.rounds) {
-      const li = el("li", "round");
-      li.append(el("div", "round-time", fmtMS(r.sec)));
-      const ul = el("ul", "sets");
-      for (const s of r.sets) {
-        if (s.rest) { ul.append(el("li", "set rest", "Rest " + fmtMS(s.sec))); continue; }
-        const row = el("li", "set");
-        row.append(el("span", null, s.ex + (s.kg ? ` · ${s.kg} kg` : "")), el("span", "amt", setAmount(s)));
-        ul.append(row);
-      }
-      li.append(ul);
-      ol.append(li);
-    }
-    body.append(ol);
-  }
-  const link = el("a", "garmin", "Open in Garmin Connect");
-  link.href = "https://connect.garmin.com/modern/activity/" + encodeURIComponent(String(a.id));
-  link.rel = "noopener noreferrer";
-  link.target = "_blank";
-  body.append(link);
-  card.append(body);
-  return card;
-}
-
 function renderActivity() {
   const v = $("view-activity");
   v.replaceChildren();
@@ -834,7 +770,7 @@ function renderActivity() {
       v.append(el("div", "day-head", dayName(parseDay(day), { weekday: "long", day: "numeric", month: "short" })));
       lastDay = day;
     }
-    v.append(activityCard(a, false));
+    v.append(activityRow(a));
   }
 }
 
@@ -1108,7 +1044,9 @@ function renderBests(v) {
   for (const e of efforts.sort((x, y) => x.ex.localeCompare(y.ex))) {
     const row = el("div", "record");
     const left = el("div");
-    left.append(el("div", "record-label", e.ex), el("div", "stat-sub", `${fmtWindow(e.win)} · ${shortDay(e.date)} ${e.date.slice(0, 4)}`));
+    const lab = el("div", "record-label");
+    lab.append(moveLink(e.ex));
+    left.append(lab, el("div", "stat-sub", `${fmtWindow(e.win)} · ${shortDay(e.date)} ${e.date.slice(0, 4)}`));
     const value = e.n === 1 && e.kg ? e.kg + " kg" : e.unit === "cal" ? e.n + " cal" : e.unit === "m" ? fmtInt(e.n) + " m" : e.n + " reps";
     row.append(left, el("div", "record-value", value));
     ec.append(row);
@@ -1125,7 +1063,9 @@ function renderBests(v) {
   [...best].sort((x, y) => y[1].kg - x[1].kg).slice(0, 10).forEach(([ex, b]) => {
     const row = el("div", "record");
     const left = el("div");
-    left.append(el("div", "record-label", ex), el("div", "stat-sub", shortDay(b.date) + " " + b.date.slice(0, 4)));
+    const lab = el("div", "record-label");
+    lab.append(moveLink(ex));
+    left.append(lab, el("div", "stat-sub", shortDay(b.date) + " " + b.date.slice(0, 4)));
     row.append(left, el("div", "record-value", b.kg + " kg"));
     list.append(row);
   });
@@ -1213,7 +1153,9 @@ function renderTrends() {
       bar.style.width = Math.max(4, Math.round((n / maxBy[unit]) * 100)) + "%";
       const track = el("div", "hbar-track");
       track.append(bar);
-      row.append(el("div", "hbar-label", ex), track,
+      const lab = el("div", "hbar-label");
+      lab.append(moveLink(ex));
+      row.append(lab, track,
         el("div", "hbar-num", unit === "m" ? n.toLocaleString() + " m" : unit === "cal" ? n + " cal" : n.toLocaleString()));
       list.append(row);
     }
@@ -1243,6 +1185,527 @@ function renderTrends() {
     v.append(el("h2", "section-title", "Other records"));
     v.append(recordsCard(other));
   }
+}
+
+// ---------- Sheets: full-screen workout and movement pages ----------
+
+const sheetStack = [];
+
+function openSheet(title, build) {
+  closeSheets();
+  const wrap = el("div", "sheet-wrap");
+  wrap.id = "sheet";
+  const back = el("div", "sheet-backdrop");
+  const panel = el("div", "sheet");
+  panel.setAttribute("role", "dialog");
+  const head = el("div", "sheet-head");
+  const grab = el("div", "sheet-grab");
+  const prev = el("button", "sheet-back", "‹");
+  prev.type = "button"; prev.setAttribute("aria-label", "Back");
+  const name = el("div", "sheet-title");
+  const close = el("button", "sheet-close", "✕");
+  close.type = "button"; close.setAttribute("aria-label", "Close");
+  head.append(grab, prev, name, close);
+  const body = el("div", "sheet-body");
+  panel.append(head, body);
+  wrap.append(back, panel);
+  document.body.append(wrap);
+  document.body.classList.add("no-scroll");
+  back.addEventListener("click", closeSheets);
+  close.addEventListener("click", closeSheets);
+  prev.addEventListener("click", popSheet);
+  // Drag the header down to close.
+  let y0 = null;
+  head.addEventListener("touchstart", (e) => { y0 = e.touches[0].clientY; panel.classList.add("dragging"); }, { passive: true });
+  head.addEventListener("touchmove", (e) => {
+    if (y0 === null) return;
+    panel.style.transform = `translateY(${Math.max(0, e.touches[0].clientY - y0)}px)`;
+  }, { passive: true });
+  head.addEventListener("touchend", (e) => {
+    if (y0 === null) return;
+    const dy = e.changedTouches[0].clientY - y0; y0 = null;
+    panel.classList.remove("dragging");
+    panel.style.transform = "";
+    if (dy > 110) closeSheets();
+  });
+  pushSheet(title, build);
+}
+
+function pushSheet(title, build) {
+  const w = $("sheet");
+  if (!w) { openSheet(title, build); return; }
+  sheetStack.push({ title, build, scroll: w.querySelector(".sheet-body").scrollTop });
+  paintSheet();
+}
+
+function popSheet() {
+  sheetStack.pop();
+  paintSheet(true);
+}
+
+function paintSheet(restore) {
+  const w = $("sheet");
+  if (!w || !sheetStack.length) { closeSheets(); return; }
+  const top = sheetStack[sheetStack.length - 1];
+  const body = w.querySelector(".sheet-body");
+  w.querySelector(".sheet-title").textContent = top.title;
+  w.querySelector(".sheet-back").hidden = sheetStack.length < 2;
+  body.replaceChildren(top.build());
+  body.scrollTop = restore ? top.scroll || 0 : 0;
+}
+
+function closeSheets() {
+  sheetStack.length = 0;
+  const w = $("sheet");
+  if (w) w.remove();
+  if (!$("wrapped")) document.body.classList.remove("no-scroll");
+}
+
+// ---------- heart rate curve with the class's rounds ----------
+
+const LAG_S = 15; // heart rate trails effort
+
+/** Work and rest pieces of a logged class, in time order, with their round. */
+function timeline(a) {
+  const out = [];
+  (a.rounds || []).forEach((r, k) => r.sets.forEach((s) => {
+    if (typeof s.a === "number" && typeof s.b === "number" && s.b > s.a) out.push({ ...s, round: k });
+  }));
+  return out.sort((x, y) => x.a - y.a);
+}
+
+function avgHr(a, from, to) {
+  if (!a.hrs) return null;
+  const st = a.hrStep || 5;
+  const xs = a.hrs.slice(Math.floor((from + LAG_S) / st), Math.ceil((to + LAG_S) / st)).filter((x) => typeof x === "number");
+  return xs.length ? xs.reduce((p, q) => p + q, 0) / xs.length : null;
+}
+
+function hrChart(a) {
+  const hrs = a.hrs, st = a.hrStep || 5;
+  const card = el("div", "card");
+  const vals = hrs.filter((x) => typeof x === "number");
+  const peak = Math.max(...vals);
+  const head = el("div", "chart-head");
+  const sum = el("div", "chart-sum");
+  sum.append(el("b", null, String(peak)), document.createTextNode(" max bpm"));
+  head.append(el("div", "chart-title", "Heart rate"), sum);
+  card.append(head);
+
+  const tl = timeline(a);
+  const hasTl = tl.length > 0;
+  const Wd = 340, Hd = hasTl ? 196 : 160, L = 2, R = 30, T = 18, B = hasTl ? 62 : 22;
+  const total = hrs.length * st;
+  const lo = Math.max(40, Math.floor((Math.min(...vals) - 8) / 10) * 10), hi = Math.ceil((peak + 6) / 10) * 10;
+  const X = (t) => L + (t / total) * (Wd - L - R);
+  const Y = (b) => T + (1 - (b - lo) / (hi - lo)) * (Hd - T - B);
+  const box = el("div", "chart hr-chart");
+  const root = svg("svg", { viewBox: `0 0 ${Wd} ${Hd}`, role: "img", "aria-label": `Heart rate, peak ${peak} bpm` });
+  box.append(root);
+
+  // Round bands behind the curve; rests darker; setup before the WOD.
+  if (hasTl) {
+    if (a.setup) {
+      svg("rect", { x: X(0), y: T, width: X(a.setup) - X(0), height: Hd - T - B, class: "band-setup" }, root);
+      if (X(a.setup) - X(0) > 34) svg("text", { x: X(a.setup / 2), y: T - 6, class: "band-label", "text-anchor": "middle" }, root).textContent = "Setup";
+    }
+    const rounds = new Map();
+    for (const p of tl) {
+      if (p.rest) {
+        svg("rect", { x: X(p.a), y: T, width: Math.max(1, X(p.b) - X(p.a)), height: Hd - T - B, class: "band-rest" + (p.sure ? "" : " unsure") }, root);
+        continue;
+      }
+      const r = rounds.get(p.round) || { a: p.a, b: p.b };
+      r.a = Math.min(r.a, p.a); r.b = Math.max(r.b, p.b);
+      rounds.set(p.round, r);
+    }
+    [...rounds].forEach(([k, r], i) => {
+      svg("rect", { x: X(r.a), y: T, width: Math.max(1, X(r.b) - X(r.a)), height: Hd - T - B, class: "band-round" + (i % 2 ? " alt" : "") }, root);
+      if (X(r.b) - X(r.a) > 16) svg("text", { x: X((r.a + r.b) / 2), y: T - 6, class: "band-label", "text-anchor": "middle" }, root).textContent = "R" + (k + 1);
+    });
+  }
+
+  for (const f of [0, 0.5, 1]) {
+    const b = lo + (hi - lo) * f;
+    svg("line", { class: "gridline", x1: L, x2: Wd - R + 4, y1: Y(b), y2: Y(b) }, root);
+    svg("text", { class: "axis", x: Wd - R + 8, y: Y(b) + 3 }, root).textContent = Math.round(b);
+  }
+
+  // The curve, with a soft fill.
+  const gid = "hrg" + (++avatarSeq);
+  const grad = svg("linearGradient", { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 }, svg("defs", {}, root));
+  svg("stop", { offset: "0%", class: "hr-stop-top" }, grad);
+  svg("stop", { offset: "100%", class: "hr-stop-bottom" }, grad);
+  let d = "", first = null, lastX = null;
+  hrs.forEach((b, i) => {
+    if (typeof b !== "number") return;
+    const x = X(i * st + st / 2), y = Y(b);
+    d += (first === null ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+    if (first === null) first = x;
+    lastX = x;
+  });
+  svg("path", { d: `${d}L${lastX},${Y(lo)}L${first},${Y(lo)}Z`, fill: `url(#${gid})` }, root);
+  svg("path", { d, class: "hr-line" }, root);
+  const pi = hrs.indexOf(peak);
+  svg("circle", { cx: X(pi * st + st / 2), cy: Y(peak), r: 3.5, class: "hr-peak" }, root);
+
+  // The movements under the curve; dashed edges are estimates.
+  if (hasTl) {
+    const y0 = Hd - B + 8, h = 24;
+    for (const p of tl) {
+      if (p.rest) continue;
+      const x1 = X(p.a), x2 = X(p.b);
+      svg("rect", { x: x1 + 0.5, y: y0, width: Math.max(1, x2 - x1 - 1), height: h, rx: 4, class: "mv-box r" + (p.round % 2) }, root);
+      if (x2 - x1 > 16) {
+        const t = svg("text", { x: (x1 + x2) / 2, y: y0 + 15.5, class: "mv-text", "text-anchor": "middle" }, root);
+        const words = p.ex.split(" ");
+        t.textContent = x2 - x1 > 54 ? (p.ex.length > 9 ? words[0].slice(0, 8) : p.ex) : p.ex.slice(0, 3);
+      }
+    }
+    for (let k = 0; k < Math.floor(total / 300) + 1; k++) {
+      const t = k * 300;
+      if (t > total) break;
+      svg("text", { class: "axis", x: X(t), y: Hd - 4, "text-anchor": k === 0 ? "start" : "middle" }, root).textContent = fmtMS(t);
+    }
+  } else {
+    [0, total / 2, total].forEach((t, k) => {
+      svg("text", { class: "axis", x: X(t), y: Hd - 4, "text-anchor": ["start", "middle", "end"][k] }, root).textContent = fmtMS(t);
+    });
+  }
+
+  // Touch: time, bpm, round and movement.
+  const cursor = svg("line", { class: "cursor", y1: T, y2: Hd - B, visibility: "hidden" }, root);
+  const dot = svg("circle", { r: 5, class: "dot hr-dot", visibility: "hidden" }, root);
+  const hit = svg("rect", { x: L, y: 0, width: Wd - L - R, height: Hd, fill: "transparent" }, root);
+  const tip = el("div", "tip");
+  tip.hidden = true;
+  box.append(tip);
+  const showTip = (evt) => {
+    const r = root.getBoundingClientRect();
+    const px = ((evt.clientX - r.left) / r.width) * Wd;
+    const t = Math.max(0, Math.min(total - 1, ((px - L) / (Wd - L - R)) * total));
+    const i = Math.min(hrs.length - 1, Math.floor(t / st));
+    const b = hrs[i];
+    if (typeof b !== "number") return;
+    const x = X(i * st + st / 2);
+    cursor.setAttribute("x1", x); cursor.setAttribute("x2", x); cursor.setAttribute("visibility", "visible");
+    dot.setAttribute("cx", x); dot.setAttribute("cy", Y(b)); dot.setAttribute("visibility", "visible");
+    const effort = t - LAG_S;
+    const p = tl.find((q) => effort >= q.a && effort < q.b);
+    let where = "";
+    if (a.setup && effort < a.setup) where = "Setup";
+    else if (p && p.rest) where = `Rest after R${p.round + 1}`;
+    else if (p) where = `R${p.round + 1} · ≈ ${p.ex}`;
+    tip.replaceChildren(el("b", null, b + " bpm"), document.createTextNode(`  ${fmtMS(t)}${where ? " · " + where : ""}`));
+    tip.hidden = false;
+    tip.style.left = Math.max(80, Math.min(r.width - 80, (x / Wd) * r.width)) + "px";
+  };
+  hit.addEventListener("pointermove", showTip);
+  hit.addEventListener("pointerdown", showTip);
+  hit.addEventListener("pointerleave", (e) => {
+    if (e.pointerType !== "mouse") return;
+    tip.hidden = true; cursor.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden");
+  });
+  card.append(box);
+
+  if (hasTl) {
+    const anySure = tl.some((p) => p.rest && p.sure);
+    card.append(el("p", "stat-sub hr-note", anySure
+      ? "Rounds and rests are matched to your heart-rate dips. Movements inside a round are estimates."
+      : "Rounds follow the class plan (no clear rests to match). Movements inside a round are estimates."));
+    // Where it got hardest.
+    const work = tl.filter((p) => !p.rest).map((p) => ({ p, hr: avgHr(a, p.a, p.b) })).filter((x) => x.hr);
+    if (work.length) {
+      const top = work.sort((x, y) => y.hr - x.hr)[0];
+      const row = el("div", "hr-insight");
+      row.append(el("span", "cmark", "↑"), el("span", null, `Hardest stretch: round ${top.p.round + 1}, ≈ ${top.p.ex} at ${Math.round(top.hr)} bpm`));
+      card.append(row);
+    }
+  }
+  return card;
+}
+
+// ---------- a workout ----------
+
+function activityRow(a) {
+  const g = groupOf(a);
+  const row = el("button", "card act-row");
+  row.type = "button";
+  const badge = el("div", "badge g" + g.cls);
+  const icon = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, null);
+  for (const d of ICONS[g.key]) svg("path", { d }, icon);
+  badge.append(icon);
+  const main = el("div", "act-main");
+  main.append(el("div", "act-title", a.name || a.label));
+  const when = new Date(a.date.replace(" ", "T"));
+  main.append(el("div", "act-meta", [a.label, when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+    Math.round(a.min) + " min", a.kcal ? Math.round(a.kcal) + " kcal" : null].filter(Boolean).join(" · ")));
+  row.append(badge, main, el("span", "chev", "›"));
+  row.addEventListener("click", () => openActivity(a));
+  return row;
+}
+
+function openActivity(a) {
+  const title = a.name || a.label;
+  if ($("sheet")) pushSheet(title, () => activityView(a)); else openSheet(title, () => activityView(a));
+}
+
+function moveLink(name, cls) {
+  const b = el("button", "move-link" + (cls ? " " + cls : ""), name);
+  b.type = "button";
+  b.addEventListener("click", (e) => { e.stopPropagation(); openMovement(name); });
+  return b;
+}
+
+function activityView(a) {
+  const v = el("div");
+  const when = new Date(a.date.replace(" ", "T"));
+  v.append(el("p", "eyebrow", `${a.label} · ${when.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })} · ${when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`));
+  const kv = el("div", "kv");
+  const pair = (b, s) => { const d = el("div"); d.append(el("b", null, b), el("span", null, s)); kv.append(d); };
+  pair(fmtMS(a.min * 60), "Time");
+  pair(a.kcal ? Math.round(a.kcal) : "–", "kcal");
+  pair(a.hr ? Math.round(a.hr) : "–", "Avg HR");
+  pair(a.hrMax ? Math.round(a.hrMax) : "–", "Max HR");
+  pair(a.te ? a.te.toFixed(1) : "–", "Aerobic TE");
+  pair(a.km ? a.km.toFixed(2) + " km" : a.teAn ? a.teAn.toFixed(1) : "–", a.km ? "Distance" : "Anaerobic TE");
+  const statCard = el("div", "card"); statCard.append(kv);
+  v.append(statCard);
+
+  if (a.hrs && a.hrs.some((x) => typeof x === "number")) v.append(hrChart(a));
+
+  const review = ((J.coach || {}).workouts || {})[String(a.id)];
+  if (review) {
+    const c = el("div", "card");
+    const head = el("div", "chip-who");
+    head.append(coachAvatar("normal", 28), el("span", "tile-label", "Coach review"));
+    c.append(head, el("div", "coach-headline", review.headline), vsRecent(a), items(review.points));
+    v.append(c);
+  }
+
+  if (a.rounds && a.rounds.length) {
+    const c = el("div", "card");
+    c.append(el("div", "chart-title", "Rounds"));
+    const ol = el("ol", "rounds");
+    for (const r of a.rounds) {
+      const li = el("li", "round");
+      li.append(el("div", "round-time", fmtMS(r.sec)));
+      const ul = el("ul", "sets");
+      for (const s of r.sets) {
+        if (s.rest) { ul.append(el("li", "set rest", "Rest " + fmtMS(s.sec))); continue; }
+        const row = el("li", "set");
+        const left = el("span");
+        left.append(moveLink(s.ex));
+        if (s.kg) left.append(document.createTextNode(` · ${s.kg} kg`));
+        const hr = typeof s.a === "number" ? avgHr(a, s.a, s.b) : null;
+        const right = el("span", "amt", setAmount(s));
+        if (hr) right.append(el("small", "set-hr", ` ${Math.round(hr)} bpm`));
+        row.append(left, right);
+        ul.append(row);
+      }
+      li.append(ul);
+      ol.append(li);
+    }
+    c.append(ol);
+    v.append(c);
+  }
+
+  if (a.notes) {
+    const c = el("div", "card notes");
+    for (const line of a.notes.split("\n")) if (line.trim()) c.append(el("p", null, line));
+    v.append(c);
+  }
+  const link = el("a", "garmin", "Open in Garmin Connect");
+  link.href = "https://connect.garmin.com/modern/activity/" + encodeURIComponent(String(a.id));
+  link.rel = "noopener noreferrer";
+  link.target = "_blank";
+  v.append(link);
+  return v;
+}
+
+// ---------- a movement ----------
+
+function movementSessions(name) {
+  const out = [];
+  for (const a of J.activities || []) {
+    const sets = [];
+    for (const r of a.rounds || []) for (const s of r.sets) if (!s.rest && s.ex === name) sets.push(s);
+    if (!sets.length) continue;
+    const units = {};
+    for (const s of sets) units[s.unit || "reps"] = (units[s.unit || "reps"] || 0) + (s.n || 0);
+    const kg = Math.max(0, ...sets.map((s) => s.kg || 0)) || null;
+    const timed = sets.filter((s) => typeof s.a === "number");
+    let hr = null;
+    if (a.hrs && timed.length) {
+      let sum = 0, w = 0;
+      for (const s of timed) { const h = avgHr(a, s.a, s.b); if (h) { sum += h * (s.b - s.a); w += s.b - s.a; } }
+      hr = w ? sum / w : null;
+    }
+    out.push({ a, units, kg, hr, sec: timed.reduce((p, s) => p + (s.b - s.a), 0) });
+  }
+  return out; // newest first
+}
+
+function openMovement(name) {
+  if ($("sheet")) pushSheet(name, () => movementView(name)); else openSheet(name, () => movementView(name));
+}
+
+function movementView(name) {
+  const v = el("div");
+  const ses = movementSessions(name);
+  if (!ses.length) { v.append(el("p", "empty", "No logged sets of this movement yet.")); return v; }
+  const totals = {};
+  for (const s of ses) for (const [u, n] of Object.entries(s.units)) totals[u] = (totals[u] || 0) + n;
+  const fmtU = (u, n) => (u === "m" ? fmtInt(n) + " m" : u === "cal" ? fmtInt(n) + " cal" : fmtInt(n));
+  const mainU = Object.keys(totals).sort((x, y) => totals[y] - totals[x])[0];
+  const best = ses.filter((s) => s.kg).sort((x, y) => y.kg - x.kg)[0];
+
+  const kv = el("div", "kv");
+  const pair = (b, s) => { const d = el("div"); d.append(el("b", null, b), el("span", null, s)); kv.append(d); };
+  pair(fmtU(mainU, totals[mainU]), mainU === "reps" ? "total reps" : "total");
+  pair(String(ses.length), ses.length === 1 ? "session" : "sessions");
+  pair(best ? best.kg + " kg" : "–", "best load");
+  const c0 = el("div", "card");
+  const amount = (x) => Object.entries(x.units).filter(([, n]) => n).map(([u, n]) => fmtU(u, n) + (u === "reps" ? " reps" : "")).join(" + ") || "–";
+  c0.append(kv, el("p", "stat-sub mv-last", `Last done ${shortDay(ses[0].a.date)} · ${amount(ses[0])}${ses[0].kg ? " @ " + ses[0].kg + " kg" : ""}`));
+  v.append(c0);
+
+  const old = ses.slice().reverse(); // oldest first for charts
+  const labels = old.map((s) => s.a.date.slice(0, 10));
+  const xl = (i) => shortDay(labels[i]);
+
+  // Heart rate while doing it: the engine signal.
+  const hrs = old.map((s) => (s.hr ? Math.round(s.hr) : null));
+  if (hrs.filter((x) => x).length >= 1) {
+    const card = chartCard({
+      kind: "line", title: "Heart rate during " + name, summary: [fmtInt(avg(hrs)), "bpm avg"], labels,
+      series: [{ cls: 2, values: hrs }], xLabel: xl,
+      tip: (i) => (hrs[i] ? [hrs[i] + " bpm", xl(i)] : null),
+    });
+    const known = hrs.filter((x) => x);
+    if (known.length >= 2) {
+      const last = known[known.length - 1], before = avg(known.slice(0, -1));
+      const diff = Math.round(last - before);
+      const trend = known.length >= 3;   // one comparison isn't a trend
+      card.append(el("div", "hr-insight", Math.abs(diff) < 2 ? "≈ Same heart rate as before." :
+        diff < 0 ? (trend ? `▼ ${-diff} bpm lower than your earlier sessions: your engine is handling it better.` : `▼ ${-diff} bpm lower than last time.`)
+          : (trend ? `▲ ${diff} bpm higher than before: a harder pace, or a tired day.` : `▲ ${diff} bpm higher than last time.`)));
+    }
+    v.append(card);
+  }
+
+  const kgs = old.map((s) => s.kg);
+  if (kgs.some((x) => x)) {
+    v.append(chartCard({
+      kind: "line", title: "Load", summary: [best.kg + " kg", "best"], labels, series: [{ cls: 1, values: kgs }], xLabel: xl,
+      tip: (i) => (kgs[i] ? [kgs[i] + " kg", xl(i)] : null),
+    }));
+  }
+  const vol = old.map((s) => s.units[mainU] || null);
+  if (vol.filter((x) => x).length) v.append(chartCard({
+    kind: "bar", title: mainU === "reps" ? "Reps per session" : mainU === "m" ? "Meters per session" : "Calories per session",
+    summary: [fmtU(mainU, Math.round(avg(vol))), "avg"], labels, series: [{ cls: 3, values: vol }], xLabel: xl,
+    tip: (i) => (vol[i] ? [fmtU(mainU, vol[i]), xl(i)] : [amount(old[i]), xl(i)]),
+  }));
+
+  v.append(el("h2", "section-title", "Sessions"));
+  for (const s of ses) v.append(activityRow(s.a));
+  return v;
+}
+
+// ---------- Home: today hero and what's new ----------
+
+let lastSeen = null;       // when the journal was last opened, from this device
+let whatsNewHidden = false;
+
+function rememberVisit() {
+  try {
+    const prev = Number(localStorage.getItem("journal.seen")) || 0;
+    if (lastSeen === null) lastSeen = prev;
+    localStorage.setItem("journal.seen", String(Date.now()));   // only a time, nothing from the journal
+  } catch { if (lastSeen === null) lastSeen = 0; }
+}
+
+function localStamp(ms) {
+  const d = new Date(ms);
+  return `${iso(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function whatsNew() {
+  if (!lastSeen) return [];
+  const since = localStamp(lastSeen);
+  const out = [];
+  for (const a of J.activities || []) {
+    const nm = a.name || a.label;
+    if (a.date.replace(" ", "T") > since) out.push([/^\p{Extended_Pictographic}/u.test(nm) ? "" : "🏋️", nm, () => openActivity(a)]);
+  }
+  const c = J.coach || {};
+  if (c.daily && (c.daily.written || "") > since) out.push(["💬", "Coach brief", () => show("coach")]);
+  for (const a of J.activities || []) {
+    const r = (c.workouts || {})[String(a.id)];
+    if (r && (r.written || "") > since) out.push(["📝", "Review: " + (a.name || a.label), () => openActivity(a)]);
+  }
+  if (c.weekly && (c.weekly.written || "") > since) out.push(["📅", "Weekly review", () => show("coach")]);
+  for (const [icon, title, , date] of highlights()) if (date >= since.slice(0, 10)) out.push([icon, title, () => show("trends")]);
+  return out.slice(0, 8);
+}
+
+function whatsNewStrip() {
+  const list = whatsNew();
+  if (!list.length || whatsNewHidden) return null;
+  const box = el("div", "new-strip");
+  const head = el("div", "new-head");
+  const x = el("button", "new-x", "✕");
+  x.type = "button"; x.setAttribute("aria-label", "Hide");
+  x.addEventListener("click", () => { whatsNewHidden = true; box.remove(); });
+  head.append(el("span", "tile-label", "New since you last looked"), x);
+  const row = el("div", "new-row");
+  for (const [icon, text, go] of list) {
+    const b = el("button", "new-chip", icon ? `${icon} ${text}` : text);
+    b.type = "button";
+    b.addEventListener("click", go);
+    row.append(b);
+  }
+  box.append(head, row);
+  return box;
+}
+
+function heroCard() {
+  const now = new Date();
+  const c = J.coach || {};
+  const daily = c.daily && c.daily.date === iso(now) ? c.daily : null;
+  const card = el("button", "card hero");
+  card.type = "button";
+  card.addEventListener("click", () => show("coach"));
+  const top = el("div", "hero-top");
+  const who = el("span", "chip-who");
+  who.append(coachAvatar(daily ? daily.call : "normal", 40), el("span", "tile-label", "Today"));
+  top.append(who);
+  if (daily) { const [cls, text] = CALLS[daily.call] || ["good", ""]; top.append(el("span", "call " + cls, text)); }
+  card.append(top);
+  card.append(el("div", "hero-headline", daily ? daily.headline : "Your coach writes once last night's sleep has synced."));
+
+  const days = dayList(3).reverse();
+  const month = dayList(31).slice(0, 30).map((x) => x.v);
+  const rd = days.find((x) => typeof x.v.ready === "number");
+  const sl = days.find((x) => x.v.sleep && x.v.sleep.sec);
+  const hv = days.find((x) => typeof x.v.hrv === "number");
+  const hrvAvg = avg(month.map((d) => d.hrv));
+  const st = rd ? readinessStatus(rd.v.readyLevel, rd.v.ready) : null;
+  const stats = el("div", "hero-stats");
+  const cell = (label, value, sub, cls) => {
+    const d = el("div");
+    d.append(el("b", null, value), el("span", null, label));
+    if (sub) d.append(el("em", cls || "", sub));
+    stats.append(d);
+  };
+  cell("Readiness", rd ? String(rd.v.ready) : "–", st && st.text, st && st.cls);
+  cell("Sleep", sl ? fmtHM(sl.v.sleep.sec) : "–", sl && sl.v.sleep.score ? "score " + sl.v.sleep.score : null);
+  cell("HRV", hv ? hv.v.hrv + " ms" : "–", hv && hrvAvg ? (hv.v.hrv >= hrvAvg ? "▲ above avg" : "▼ below avg") : null,
+    hv && hrvAvg ? (hv.v.hrv >= hrvAvg ? "good" : "warning") : null);
+  card.append(stats);
+  if (daily && daily.plan) card.append(el("div", "hero-plan", "Plan · " + planText(daily.plan)));
+  return card;
 }
 
 // ---------- Wrapped ----------
@@ -1531,6 +1994,7 @@ const RENDER = { home: renderHome, activity: renderActivity, sleep: renderSleep,
 
 function show(view, keepScroll) {
   if (view !== current) stopSpeaking();
+  closeSheets();
   current = view;
   for (const b of document.querySelectorAll(".tab")) b.classList.toggle("active", b.dataset.view === view);
   for (const key of Object.keys(RENDER)) $("view-" + key).hidden = key !== view;
@@ -1540,6 +2004,7 @@ function show(view, keepScroll) {
 }
 
 function start() {
+  rememberVisit();
   $("lock").hidden = true;
   $("app").hidden = false;
   show("home");
