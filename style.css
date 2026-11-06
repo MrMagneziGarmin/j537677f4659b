@@ -457,12 +457,13 @@ button { font: inherit; cursor: pointer; }
 }
 .body-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 10px; }
 .body-col { display: flex; flex-direction: column; align-items: center; }
-.body-fig { width: 100%; max-width: 170px; height: auto; display: block; }
+.body-fig { height: 290px; width: auto; max-width: 100%; display: block; }
 .body-side { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.body-sil { fill: var(--sil); stroke: var(--sil-line); stroke-width: 1.4; }
-.mus { fill: var(--lv-fresh); stroke: var(--sil); stroke-width: 1.6; stroke-linejoin: round; cursor: pointer; transition: opacity .2s; }
+.sil-edge { fill: var(--sil); stroke: var(--sil-line); stroke-width: 4.2; stroke-linejoin: round; }
+.sil-fill { fill: var(--sil); stroke: var(--sil); stroke-width: 3; stroke-linejoin: round; }
+.mus { fill: var(--lv-fresh); stroke: var(--sil); stroke-width: .8; stroke-linejoin: round; cursor: pointer; transition: opacity .2s; }
 .mus.lv-light { fill: var(--lv-light); } .mus.lv-worked { fill: var(--lv-worked); } .mus.lv-fried { fill: var(--lv-fried); }
-.mus.sore { stroke: var(--text); stroke-width: 1.8; stroke-dasharray: 4 2.5; }
+.mus.sore { stroke: var(--text); stroke-width: 1; stroke-dasharray: 2 1.2; }
 .mus:active { opacity: .6; }
 .body-legend i { width: 12px; height: 12px; border-radius: 4px; }
 .body-legend i.lv-fresh, .lv-bar span.lv-fresh { background: var(--lv-fresh); }
