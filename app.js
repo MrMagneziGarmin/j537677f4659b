@@ -350,8 +350,11 @@ function highlights() {
   }
   // Only real improvements count: a first-ever load isn't a highlight.
   for (const [ex, b] of best) if (b.date >= since && !b.first) out.push(["🏋️", `${ex} ${b.kg} kg`, "heaviest yet", b.date]);
+  for (const e of maxEfforts()) {
+    if (e.date >= since) out.push(["⚡", `${e.ex} ${e.n === 1 && e.kg ? e.kg + " kg" : e.n + (e.unit === "cal" ? " cal" : " reps")}`, "max effort · " + fmtWindow(e.win), e.date]);
+  }
   for (const r of J.records || []) {
-    if (r.date && r.date >= since && r.kind !== "days") {
+    if (r.date && r.date >= since && (r.kind === "time" || r.kind === "distance")) {
       const v = r.kind === "time" ? fmtClock(r.value) : r.kind === "distance" ? (r.value / 1000).toFixed(2) + " km" : fmtInt(r.value);
       out.push(["🏆", `${r.label} ${v}`, "personal record", r.date]);
     }
@@ -792,9 +795,8 @@ function fmtClock(sec) {
   return (h ? h + ":" + pad(m) : m) + ":" + pad(s % 60);
 }
 
-function recordsCard() {
+function recordsCard(recs) {
   const card = el("div", "card records");
-  const recs = J.records || [];
   if (!recs.length) { card.append(el("p", "empty", "No records yet.")); return card; }
   for (const r of recs) {
     const row = el("div", "record");
@@ -810,6 +812,63 @@ function recordsCard() {
     card.append(row);
   }
   return card;
+}
+
+function fmtWindow(sec) {
+  if (!sec) return "max";
+  return sec % 60 ? sec + " s" : sec / 60 + " min";
+}
+
+/** Max-effort results: best per movement and window, newest date of that best. */
+function maxEfforts() {
+  const best = new Map();
+  for (const a of (J.activities || []).slice().reverse()) for (const r of a.rounds || []) for (const s of r.sets) {
+    if (!s.max) continue;
+    const key = s.ex + "|" + (s.win || 0) + "|" + (s.unit || "reps");
+    const score = s.n === 1 && s.kg ? s.kg : s.n;          // a max lift scores by load
+    const prev = best.get(key);
+    if (!prev || score >= prev.score) best.set(key, { ex: s.ex, win: s.win || 0, unit: s.unit, kg: s.kg, n: s.n, score, date: a.date.slice(0, 10) });
+  }
+  return [...best.values()];
+}
+
+function renderBests(v) {
+  const recs = J.records || [];
+  const running = recs.filter((r) => r.kind === "time" || r.kind === "distance");
+  v.append(el("h2", "section-title", "Running bests"));
+  v.append(recordsCard(running));
+
+  const efforts = maxEfforts();
+  v.append(el("h2", "section-title", "Max efforts"));
+  const ec = el("div", "card records");
+  if (!efforts.length) {
+    ec.append(el("p", "empty", "None yet. When a class has a max test, add your result in the Log WOD notes, e.g. “max burpees 1 min: 22”."));
+  }
+  for (const e of efforts.sort((x, y) => x.ex.localeCompare(y.ex))) {
+    const row = el("div", "record");
+    const left = el("div");
+    left.append(el("div", "record-label", e.ex), el("div", "stat-sub", `${fmtWindow(e.win)} · ${shortDay(e.date)} ${e.date.slice(0, 4)}`));
+    const value = e.n === 1 && e.kg ? e.kg + " kg" : e.unit === "cal" ? e.n + " cal" : e.unit === "m" ? fmtInt(e.n) + " m" : e.n + " reps";
+    row.append(left, el("div", "record-value", value));
+    ec.append(row);
+  }
+  v.append(ec);
+
+  v.append(el("h2", "section-title", "Heaviest loads"));
+  const best = new Map();
+  for (const a of (J.activities || []).slice().reverse()) for (const r of a.rounds || []) for (const s of r.sets) {
+    if (!s.rest && s.kg && s.kg >= ((best.get(s.ex) || {}).kg || 0)) best.set(s.ex, { kg: s.kg, date: a.date.slice(0, 10) });
+  }
+  const list = el("div", "card records");
+  if (!best.size) list.append(el("p", "empty", "No weighted movements yet."));
+  [...best].sort((x, y) => y[1].kg - x[1].kg).slice(0, 10).forEach(([ex, b]) => {
+    const row = el("div", "record");
+    const left = el("div");
+    left.append(el("div", "record-label", ex), el("div", "stat-sub", shortDay(b.date) + " " + b.date.slice(0, 4)));
+    row.append(left, el("div", "record-value", b.kg + " kg"));
+    list.append(row);
+  });
+  v.append(list);
 }
 
 function weeklyTraining(weeks) {
@@ -832,6 +891,8 @@ function renderTrends() {
   const v = $("view-trends");
   v.replaceChildren();
   v.append(el("h1", "large-title", "Progress"));
+  renderBests(v);
+  v.append(el("h2", "section-title", "Training"));
   const seg = el("div", "seg");
   for (const r of [14, 30, 90]) {
     const b = el("button", r === range ? "on" : "", r + " days");
@@ -899,23 +960,6 @@ function renderTrends() {
     v.append(card);
   }
 
-  v.append(el("h2", "section-title", "Personal records"));
-  v.append(recordsCard());
-
-  v.append(el("h2", "section-title", "Heaviest loads"));
-  const best = new Map();
-  for (const a of J.activities || []) for (const r of a.rounds || []) for (const s of r.sets) {
-    if (!s.rest && s.kg && s.kg > (best.get(s.ex) || 0)) best.set(s.ex, s.kg);
-  }
-  const list = el("div", "card");
-  const kv = el("div", "kv");
-  [...best].sort((a, b) => b[1] - a[1]).slice(0, 9).forEach(([ex, kg]) => {
-    const d = el("div"); d.append(el("b", null, kg + " kg"), el("span", null, ex)); kv.append(d);
-  });
-  while (kv.children.length % 3) kv.append(el("div")); // keep the grid's last row whole
-  list.append(best.size ? kv : el("p", "empty", "No weighted movements yet."));
-  v.append(list);
-
   v.append(el("h2", "section-title", "Recovery"));
   const rhr = pick("rhr");
   v.append(chartCard({
@@ -929,6 +973,12 @@ function renderTrends() {
     series: [{ cls: 1, values: hrv }],
     tip: (i) => (hrv[i] !== null ? [hrv[i] + " ms", shortDay(labels[i])] : null),
   }));
+
+  const other = (J.records || []).filter((r) => r.kind !== "time" && r.kind !== "distance");
+  if (other.length) {
+    v.append(el("h2", "section-title", "Other records"));
+    v.append(recordsCard(other));
+  }
 }
 
 // ---------- shell ----------
