@@ -244,7 +244,7 @@ function coachChip(daily) {
   const top = el("div", "coach-top");
   top.append(el("span", "tile-label", "Coach · today"), el("span", "status " + cls, text));
   card.append(top, el("div", "coach-headline", daily.headline));
-  if (daily.plan) card.append(el("div", "stat-sub", daily.plan));
+  if (daily.plan) card.append(el("div", "stat-sub", planText(daily.plan)));
   return card;
 }
 
@@ -423,12 +423,151 @@ function renderHome() {
 }
 
 // ---------- Coach ----------
+// The coach's words are short; the numbers around them are drawn here from Garmin data (no AI).
 
+const TAGS = { good: ["good", "✓"], watch: ["watch", "!"], tip: ["advice", "→"] };
 
-function bullets(items) {
-  const ul = el("ul", "bullets");
-  for (const it of items || []) ul.append(el("li", null, it));
+/** Tagged one-liners; older reports were plain strings. */
+function items(list, tag) {
+  const ul = el("ul", "citems");
+  for (const it of list || []) {
+    const o = typeof it === "string" ? { tag: tag || "tip", text: it } : it;
+    const [cls, mark] = TAGS[o.tag] || TAGS.tip;
+    const li = el("li", "citem " + cls);
+    li.append(el("span", "cmark", mark), el("span", null, o.text));
+    ul.append(li);
+  }
   return ul;
+}
+
+function planBox(plan, title) {
+  const box = el("div", "cplan");
+  box.append(el("div", "coach-sub", title));
+  if (typeof plan === "string") { box.append(el("p", null, plan)); return box; }
+  for (const p of plan || []) {
+    const row = el("div", "cplan-row");
+    row.append(el("b", null, p.what), el("span", null, p.detail));
+    box.append(row);
+  }
+  return box;
+}
+
+function planText(plan) {
+  if (typeof plan === "string") return plan;
+  return (plan || []).map((p) => `${p.what} ${p.detail}`).join(" · ");
+}
+
+const fmtMin = (m) => (m < 60 ? Math.round(m) + " min" : fmtHM(m * 60));
+
+/** Today against the last 30 days: a bar for today, a tick for the average. */
+function signals() {
+  const all = dayList(31);
+  const today = all[30].v;
+  const month = all.slice(0, 30).map((x) => x.v);
+  const hours = (d) => (d.sleep && d.sleep.sec ? d.sleep.sec / 3600 : null);
+  const rows = [
+    ["Sleep", hours(today), avg(month.map(hours)), (x) => fmtHM(x * 3600), 1],
+    ["HRV", today.hrv, avg(month.map((d) => d.hrv)), (x) => Math.round(x) + " ms", 1],
+    ["Resting HR", today.rhr, avg(month.map((d) => d.rhr)), (x) => Math.round(x) + " bpm", -1],
+    ["Readiness", today.ready, avg(month.map((d) => d.ready)), (x) => String(Math.round(x)), 1],
+  ];
+  const grid = el("div", "signals");
+  for (const [label, now, base, fmt, dir] of rows) {
+    if (typeof now !== "number" || !isFinite(now)) continue;
+    const diff = base ? (now - base) / base : 0;
+    const cls = !base || Math.abs(diff) < 0.03 ? "same" : diff * dir > 0 ? "up" : "down";
+    const c = el("div", "signal");
+    c.append(el("span", "tile-label", label), el("b", null, fmt(now)));
+    const max = Math.max(now, base || 0) * 1.2 || 1;
+    const track = el("div", "sig-track");
+    const fill = el("span", "sig-fill " + cls);
+    fill.style.width = Math.round((now / max) * 100) + "%";
+    track.append(fill);
+    if (base) { const tick = el("i", "sig-base"); tick.style.left = Math.round((base / max) * 100) + "%"; track.append(tick); }
+    const mark = cls === "same" ? "≈" : now > base ? "▲" : "▼";
+    c.append(track, el("span", "sig-sub " + cls, base ? `${mark} avg ${fmt(base)}` : ""));
+    grid.append(c);
+  }
+  return grid;
+}
+
+/** Minutes per type since a date. */
+function mix(from) {
+  const mins = { training: 0, padel: 0, run: 0, other: 0 };
+  let sessions = 0;
+  for (const a of J.activities || []) {
+    if (parseDay(a.date) < from) continue;
+    mins[groupOf(a).key] += a.min || 0;
+    sessions++;
+  }
+  return { sessions, total: Object.values(mins).reduce((s, x) => s + x, 0),
+    parts: GROUPS.map((g) => ({ label: g.label, cls: g.cls, value: mins[g.key] })) };
+}
+
+function donut(m, centre, sub) {
+  const wrap = el("div", "donut");
+  const root = svg("svg", { viewBox: "0 0 120 120", role: "img", "aria-label": `${centre} ${sub}` });
+  const R = 46, C = 2 * Math.PI * R;
+  svg("circle", { cx: 60, cy: 60, r: R, class: "donut-track" }, root);
+  const shown = m.parts.filter((p) => p.value);
+  let off = 0;
+  for (const p of shown) {
+    const len = (p.value / m.total) * C;
+    svg("circle", {
+      cx: 60, cy: 60, r: R, class: "donut-seg line" + p.cls, transform: "rotate(-90 60 60)",
+      "stroke-dasharray": `${Math.max(len - (shown.length > 1 ? 3 : 0), 0.5)} ${C}`, "stroke-dashoffset": -off,
+    }, root);
+    off += len;
+  }
+  svg("text", { x: 60, y: 62, class: "donut-num", "text-anchor": "middle" }, root).textContent = centre;
+  svg("text", { x: 60, y: 80, class: "donut-sub", "text-anchor": "middle" }, root).textContent = sub;
+  const lg = el("div", "donut-legend");
+  for (const p of shown) {
+    const row = el("div");
+    row.append(el("i", "g" + p.cls), el("span", null, p.label), el("b", null, `${fmtMin(p.value)} · ${Math.round((p.value / m.total) * 100)}%`));
+    lg.append(row);
+  }
+  if (!shown.length) lg.append(el("p", "empty", "No sessions yet."));
+  wrap.append(root, lg);
+  return wrap;
+}
+
+/** Training minutes for each of the last 7 days, stacked by type. */
+function loadChart() {
+  const ds = dayList(7);
+  const byDay = (g) => ds.map((x) => Math.round((J.activities || [])
+    .filter((a) => a.date.slice(0, 10) === x.key && groupOf(a).key === g.key).reduce((s, a) => s + (a.min || 0), 0)));
+  const series = GROUPS.map((g) => ({ name: g.label, cls: g.cls, values: byDay(g) }));
+  const totals = ds.map((_, i) => series.reduce((s, x) => s + x.values[i], 0));
+  const card = chartCard({
+    kind: "stack", title: "Load · last 7 days", summary: [fmtMin(totals.reduce((a, b) => a + b, 0)), "total"],
+    labels: ds.map((x) => x.key), series, min: 0,
+    xLabel: (i) => ds[i].d.toLocaleDateString(undefined, { weekday: "narrow" }),
+    tip: (i) => (totals[i] ? [totals[i] + " min", shortDay(ds[i].key)] : null),
+  });
+  card.append(legendFor(GROUPS.map((g) => [g.label, g.cls])));
+  return card;
+}
+
+/** A class against the last few of the same kind. */
+function vsRecent(a) {
+  const prev = (J.activities || []).filter((x) => x.id !== a.id && groupOf(x).key === groupOf(a).key && x.date < a.date).slice(0, 6);
+  const kv = el("div", "kv kv-cmp");
+  const cell = (label, val, base, fmt, higherIsHarder) => {
+    const d = el("div");
+    d.append(el("b", null, typeof val === "number" ? fmt(val) : "–"), el("span", null, label));
+    if (typeof val === "number" && base) {
+      const diff = val - base;
+      const em = el("em", Math.abs(diff) / base < 0.03 ? "" : higherIsHarder && diff > 0 ? "hard" : "easy",
+        Math.abs(diff) / base < 0.03 ? "≈ usual" : (diff > 0 ? "▲ " : "▼ ") + fmt(Math.abs(diff)));
+      d.append(em);
+    }
+    kv.append(d);
+  };
+  cell("avg HR", a.hr, avg(prev.map((x) => x.hr)), (x) => String(Math.round(x)), true);
+  cell("kcal", a.kcal, avg(prev.map((x) => x.kcal)), (x) => String(Math.round(x)), true);
+  cell("aerobic TE", a.te, avg(prev.map((x) => x.te)), (x) => x.toFixed(1), true);
+  return kv;
 }
 
 function renderCoach() {
@@ -441,29 +580,29 @@ function renderCoach() {
       el("p", "empty", "Nothing yet: the first reports arrive with the next sync."));
     return;
   }
-  v.append(el("p", "eyebrow", "Based on your Garmin data and logged classes"));
 
   if (c.daily) {
     const d = c.daily;
-    const card = el("div", "card");
+    const card = el("div", "card coach-today");
     const [cls, text] = CALLS[d.call] || ["good", ""];
     const top = el("div", "coach-top");
-    top.append(el("span", "tile-label", d.date === iso(new Date()) ? "Today" : shortDay(d.date)), el("span", "status " + cls, text));
-    card.append(top, el("div", "coach-big", d.headline), bullets(d.points));
-    if (d.plan) { const p = el("div", "coach-plan"); p.append(el("b", null, "Plan  "), document.createTextNode(d.plan)); card.append(p); }
+    top.append(el("span", "tile-label", d.date === iso(new Date()) ? "Today" : shortDay(d.date)), el("span", "call " + cls, text));
+    card.append(top, el("div", "coach-big", d.headline));
+    if (d.date === iso(new Date())) card.append(signals());
+    card.append(items(d.points), planBox(d.plan, "Today's plan"));
     v.append(card);
   }
+  v.append(loadChart());
 
   if (c.weekly) {
     const w = c.weekly;
     v.append(el("h2", "section-title", "This week"));
     const card = el("div", "card");
     card.append(el("div", "tile-label", "Week of " + shortDay(w.week)), el("div", "coach-big", w.headline));
-    for (const [title, items] of [["Wins", w.wins], ["Watch", w.watch], ["Focus", w.focus]]) {
-      if (!items || !items.length) continue;
-      card.append(el("div", "coach-sub", title), bullets(items));
-    }
-    if (w.next_week) { const p = el("div", "coach-plan"); p.append(el("b", null, "Next week  "), document.createTextNode(w.next_week)); card.append(p); }
+    const m = mix(weekStart(new Date()));
+    card.append(donut(m, fmtMin(m.total), m.sessions === 1 ? "1 session" : m.sessions + " sessions"));
+    card.append(items(w.wins, "good"), items(w.watch, "watch"), items(w.focus, "tip"));
+    if (w.next_week) card.append(planBox(w.next_week, "Next week"));
     v.append(card);
   }
 
@@ -473,7 +612,8 @@ function renderCoach() {
     for (const a of reviews) {
       const r = c.workouts[String(a.id)];
       const card = el("div", "card");
-      card.append(el("div", "tile-label", `${shortDay(a.date)} · ${a.name || a.label}`), el("div", "coach-headline", r.headline), bullets(r.points));
+      card.append(el("div", "tile-label", `${shortDay(a.date)} · ${a.name || a.label}`), el("div", "coach-headline", r.headline),
+        vsRecent(a), items(r.points));
       v.append(card);
     }
   }
