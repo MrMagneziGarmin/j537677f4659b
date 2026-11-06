@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Only this site's own files; no inline code, no outside connections, no forms posting anywhere. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="WOD Journal">
+<meta name="theme-color" content="#0f1115">
+<title>WOD Journal</title>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<main id="lock" class="lock">
+  <h1>WOD Journal</h1>
+  <form id="unlock" autocomplete="on">
+    <!-- Lets iPhone Passwords file the password under one name and fill it with Face ID. -->
+    <input type="text" name="username" autocomplete="username" value="wod-journal" readonly hidden>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password"
+           autocapitalize="off" autocorrect="off" spellcheck="false" required>
+    <button type="submit" id="open">Open</button>
+    <p id="status" role="status"></p>
+  </form>
+</main>
+
+<main id="journal" class="journal" hidden>
+  <header class="top">
+    <h1>WOD Journal</h1>
+    <button type="button" id="lockBtn" class="ghost">Lock</button>
+  </header>
+  <section id="stats" class="stats" aria-label="This month"></section>
+  <nav class="tabs" aria-label="Views">
+    <button type="button" data-tab="classes" class="tab active">Classes</button>
+    <button type="button" data-tab="progress" class="tab">Progress</button>
+  </nav>
+  <section id="classes"></section>
+  <section id="progress" hidden></section>
+</main>
+</body>
+</html>
