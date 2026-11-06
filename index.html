@@ -21,12 +21,14 @@
 <body>
 <main id="lock" class="lock">
   <svg class="lock-mark" viewBox="0 0 120 120" aria-hidden="true">
-    <circle class="ring-track r1" cx="60" cy="60" r="50"/><circle class="ring r1" cx="60" cy="60" r="50"/>
-    <circle class="ring-track r2" cx="60" cy="60" r="36"/><circle class="ring r2" cx="60" cy="60" r="36"/>
-    <circle class="ring-track r3" cx="60" cy="60" r="22"/><circle class="ring r3" cx="60" cy="60" r="22"/>
+    <rect class="bar" x="16" y="56" width="88" height="8" rx="4"/>
+    <rect class="plate p1" x="22" y="34" width="12" height="52" rx="5"/>
+    <rect class="plate p2" x="36" y="42" width="9" height="36" rx="4"/>
+    <rect class="plate p1" x="86" y="34" width="12" height="52" rx="5"/>
+    <rect class="plate p2" x="75" y="42" width="9" height="36" rx="4"/>
   </svg>
   <h1>Journal</h1>
-  <p class="lock-sub">Your training and health, encrypted.</p>
+  <p class="lock-sub">Your training, encrypted.</p>
   <form id="unlock" autocomplete="on">
     <!-- Lets iPhone Passwords file the password under one name and fill it with Face ID. -->
     <input type="text" name="username" autocomplete="username" value="wod-journal" readonly hidden>
@@ -49,31 +51,31 @@
     </span>
   </header>
   <section id="view-home" class="view" data-title="Home"></section>
-  <section id="view-activity" class="view" data-title="Activity" hidden></section>
-  <section id="view-sleep" class="view" data-title="Sleep" hidden></section>
-  <section id="view-trends" class="view" data-title="Trends" hidden></section>
+  <section id="view-activity" class="view" data-title="Workouts" hidden></section>
+  <section id="view-trends" class="view" data-title="Progress" hidden></section>
   <section id="view-coach" class="view" data-title="Coach" hidden></section>
+  <section id="view-sleep" class="view" data-title="Sleep" hidden></section>
 
   <nav class="tabbar" aria-label="Sections">
     <button type="button" class="tab active" data-view="home" aria-label="Home">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5L12 4l8 6.5V20h-5v-6H9v6H4z"/></svg>
       <span>Home</span>
     </button>
-    <button type="button" class="tab" data-view="activity" aria-label="Activity">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6"/></svg>
-      <span>Activity</span>
+    <button type="button" class="tab" data-view="activity" aria-label="Workouts">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/></svg>
+      <span>Workouts</span>
     </button>
-    <button type="button" class="tab" data-view="sleep" aria-label="Sleep">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
-      <span>Sleep</span>
-    </button>
-    <button type="button" class="tab" data-view="trends" aria-label="Trends">
+    <button type="button" class="tab" data-view="trends" aria-label="Progress">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      <span>Trends</span>
+      <span>Progress</span>
     </button>
     <button type="button" class="tab" data-view="coach" aria-label="Coach">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg>
       <span>Coach</span>
+    </button>
+    <button type="button" class="tab" data-view="sleep" aria-label="Sleep">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+      <span>Sleep</span>
     </button>
   </nav>
 </div>

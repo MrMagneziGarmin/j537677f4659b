@@ -179,43 +179,6 @@ function setAmount(s) {
 
 // ---------- Today ----------
 
-function ringsCard(today, week) {
-  const card = el("div", "card");
-  const rings = el("div", "rings");
-  const g = svg("svg", { viewBox: "0 0 140 140", role: "img", "aria-label": "Activity rings" });
-  const steps = today.steps || 0, stepGoal = today.stepGoal || 8000;
-  const active = today.activeKcal || 0, activeGoal = 600;
-  const minutes = week.minutes, minutesGoal = today.imGoal || 150;
-  const items = [
-    { r: 58, v: active / activeGoal, cls: "r1" },
-    { r: 42, v: steps / stepGoal, cls: "r2" },
-    { r: 26, v: minutes / minutesGoal, cls: "r3" },
-  ];
-  for (const it of items) {
-    const c = 2 * Math.PI * it.r;
-    svg("circle", { class: "ring-track " + it.cls, cx: 70, cy: 70, r: it.r }, g);
-    const ring = svg("circle", { class: "ring " + it.cls, cx: 70, cy: 70, r: it.r, "stroke-dasharray": `0 ${c}` }, g);
-    requestAnimationFrame(() => requestAnimationFrame(() =>
-      ring.setAttribute("stroke-dasharray", `${Math.max(0.001, Math.min(it.v, 1)) * c} ${c}`)));
-  }
-  const legend = el("div", "ring-legend");
-  const row = (cls, label, value, goal, unit) => {
-    const r = el("div", "ring-row " + cls);
-    r.append(el("div", "tile-label", label));
-    const v = el("div");
-    v.append(el("span", "num", fmtInt(value)), el("span", "of", ` / ${fmtInt(goal)} ${unit}`));
-    r.append(v);
-    return r;
-  };
-  legend.append(
-    row("c1", "Active", active, activeGoal, "kcal"),
-    row("c2", "Steps", steps, stepGoal, ""),
-    row("c3", "Intensity · week", minutes, minutesGoal, "min"));
-  rings.append(g, legend);
-  card.append(rings);
-  return card;
-}
-
 function tile(label, value, unit, sub, status) {
   const c = el("div", "card");
   c.append(el("div", "tile-label", label));
@@ -273,15 +236,145 @@ const CALLS = {
   easy: ["warning", "Keep it easy"], rest: ["serious", "Rest day"],
 };
 
-function coachChip(daily, compact) {
+function coachChip(daily) {
   const card = el("button", "card coach-chip");
   card.type = "button";
   card.addEventListener("click", () => show("coach"));
   const [cls, text] = CALLS[daily.call] || ["good", "Coach"];
   const top = el("div", "coach-top");
-  top.append(el("span", "tile-label", "Coach"), el("span", "status " + cls, text));
+  top.append(el("span", "tile-label", "Coach · today"), el("span", "status " + cls, text));
   card.append(top, el("div", "coach-headline", daily.headline));
-  if (!compact && daily.plan) card.append(el("div", "stat-sub", daily.plan));
+  if (daily.plan) card.append(el("div", "stat-sub", daily.plan));
+  return card;
+}
+
+// Weeks run Sunday to Saturday.
+function weekStart(d) {
+  const s = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0);
+  s.setDate(s.getDate() - s.getDay());
+  return s;
+}
+
+/** Sessions, minutes, kcal and avg HR between two dates (inclusive start, exclusive end). */
+function sessionStats(from, to) {
+  const acts = (J.activities || []).filter((a) => { const d = parseDay(a.date); return d >= from && d < to; });
+  const mins = acts.reduce((s, a) => s + (a.min || 0), 0);
+  return {
+    acts,
+    sessions: acts.length,
+    minutes: mins,
+    kcal: acts.reduce((s, a) => s + (a.kcal || 0), 0),
+    hr: mins ? acts.reduce((s, a) => s + (a.hr || 0) * (a.min || 0), 0) / mins : null,
+  };
+}
+
+function delta(now, before, fmt) {
+  if (!before) return null;
+  const diff = now - before;
+  if (Math.abs(diff) < 0.5) return "same as last week";
+  return (diff > 0 ? "▲ " : "▼ ") + fmt(Math.abs(diff)) + " vs last week";
+}
+
+function weekCard() {
+  const today = new Date();
+  const start = weekStart(today);
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 0);
+  const lastStart = new Date(start); lastStart.setDate(start.getDate() - 7);
+  const lastEnd = new Date(end); lastEnd.setDate(end.getDate() - 7); // same span of last week
+  const w = sessionStats(start, end), l = sessionStats(lastStart, lastEnd);
+
+  const card = el("div", "card");
+  card.append(el("div", "tile-label", "This week"));
+  const kv = el("div", "kv kv4");
+  const pair = (b, s, d) => {
+    const x = el("div"); x.append(el("b", null, b), el("span", null, s));
+    if (d) x.append(el("em", null, d));
+    kv.append(x);
+  };
+  pair(w.sessions, w.sessions === 1 ? "session" : "sessions", delta(w.sessions, l.sessions, (n) => Math.round(n)));
+  pair(fmtHM(w.minutes * 60).replace("0h ", ""), "training", delta(w.minutes, l.minutes, (n) => Math.round(n) + " min"));
+  pair(fmtInt(w.kcal), "kcal", delta(w.kcal, l.kcal, (n) => fmtInt(n)));
+  pair(w.hr ? Math.round(w.hr) : "–", "avg HR", null);
+  card.append(kv);
+
+  // Mon-Sun strip: one dot per session, colored by type.
+  const strip = el("div", "weekstrip");
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const col = el("div", "wday" + (iso(d) === iso(today) ? " now" : ""));
+    col.append(el("span", "wday-name", d.toLocaleDateString(undefined, { weekday: "narrow" })));
+    const dots = el("div", "wdots");
+    for (const a of w.acts.filter((a) => a.date.slice(0, 10) === iso(d))) dots.append(el("i", "g" + groupOf(a).cls));
+    col.append(dots);
+    strip.append(col);
+  }
+  card.append(strip, legendFor(GROUPS.map((g) => [g.label, g.cls])));
+  return card;
+}
+
+function recoveryCard() {
+  const days = dayList(3).reverse();
+  const card = el("button", "card recovery");
+  card.type = "button";
+  card.addEventListener("click", () => show("sleep"));
+  const cell = (label, value, sub, cls) => {
+    const c = el("div");
+    c.append(el("span", "tile-label", label), el("b", null, value));
+    if (sub) c.append(el("span", "status " + (cls || ""), sub));
+    return c;
+  };
+  const rd = days.find((x) => x.v.ready !== null && x.v.ready !== undefined);
+  const st = rd ? readinessStatus(rd.v.readyLevel, rd.v.ready) : null;
+  const sl = days.find((x) => x.v.sleep);
+  const hv = days.find((x) => x.v.hrv);
+  const hrvAvg = avg(dayList(30).map((x) => x.v.hrv));
+  card.append(
+    cell("Readiness", rd ? rd.v.ready : "–", st && st.text, st && st.cls),
+    cell("Sleep", sl ? fmtHM(sl.v.sleep.sec) : "–", sl && sl.v.sleep.score ? "score " + sl.v.sleep.score : null),
+    cell("HRV", hv ? hv.v.hrv + " ms" : "–", hv && hrvAvg ? (hv.v.hrv >= hrvAvg ? "above avg" : "below avg") : null,
+      hv && hrvAvg ? (hv.v.hrv >= hrvAvg ? "good" : "warning") : null));
+  return card;
+}
+
+/** New heaviest loads and records from the last few weeks. */
+function highlights() {
+  const out = [];
+  const since = iso(new Date(Date.now() - 21 * 864e5));
+  const best = new Map();
+  for (const a of (J.activities || []).slice().reverse()) {      // oldest first
+    for (const r of a.rounds || []) for (const s of r.sets) {
+      if (s.rest || !s.kg) continue;
+      const prev = best.get(s.ex);
+      if (!prev || s.kg > prev.kg) best.set(s.ex, { kg: s.kg, date: a.date.slice(0, 10), first: !prev });
+    }
+  }
+  // Only real improvements count: a first-ever load isn't a highlight.
+  for (const [ex, b] of best) if (b.date >= since && !b.first) out.push(["🏋️", `${ex} ${b.kg} kg`, "heaviest yet", b.date]);
+  for (const r of J.records || []) {
+    if (r.date && r.date >= since && r.kind !== "days") {
+      const v = r.kind === "time" ? fmtClock(r.value) : r.kind === "distance" ? (r.value / 1000).toFixed(2) + " km" : fmtInt(r.value);
+      out.push(["🏆", `${r.label} ${v}`, "personal record", r.date]);
+    }
+  }
+  return out.sort((a, b) => (a[3] < b[3] ? 1 : -1)).slice(0, 5);
+}
+
+function weeksChart(weeksBack) {
+  const weeks = weeklyTraining(weeksBack);
+  const wk = (g) => weeks.map((w) => Math.round(w.mins[g]));
+  const card = chartCard({
+    kind: "stack", title: `Training · last ${weeksBack} weeks`,
+    summary: [fmtInt(avg(weeks.map((w) => Object.values(w.mins).reduce((a, b) => a + b, 0)))), "min / week"],
+    labels: weeks.map((w) => w.key),
+    series: GROUPS.map((g) => ({ name: g.label, cls: g.cls, values: wk(g.key) })),
+    xLabel: (i) => shortDay(weeks[i].key),
+    tip: (i) => {
+      const parts = GROUPS.map((g) => [g.label, Math.round(weeks[i].mins[g.key])]).filter((p) => p[1]);
+      return parts.length ? [parts.reduce((s, p) => s + p[1], 0) + " min",
+        "week of " + shortDay(weeks[i].key) + " · " + parts.map((p) => `${p[0]} ${p[1]}`).join(", ")] : null;
+    },
+  });
+  card.append(legendFor(GROUPS.map((g) => [g.label, g.cls])));
   return card;
 }
 
@@ -289,74 +382,37 @@ function renderHome() {
   const v = $("view-home");
   v.replaceChildren();
   const now = new Date();
-  const part = partOfDay(now.getHours());
   const first = J.profile && J.profile.first;
-  v.append(el("h1", "large-title", `Good ${part}${first ? ", " + first : ""}`),
+  v.append(el("h1", "large-title", `Good ${partOfDay(now.getHours())}${first ? ", " + first : ""}`),
     el("p", "eyebrow", dayName(now, { weekday: "long", day: "numeric", month: "long" })));
 
-  const days = dayList(7);
-  const t = days[days.length - 1].v;
-  // Garmin's week: Monday to today, vigorous minutes count double.
-  const sinceMonday = days.slice(days.length - 1 - ((now.getDay() + 6) % 7));
-  const week = { minutes: sinceMonday.reduce((sum, x) => sum + (x.v.imMod || 0) + 2 * (x.v.imVig || 0), 0) };
   const daily = J.coach && J.coach.daily && J.coach.daily.date === iso(now) ? J.coach.daily : null;
-  const todays = (J.activities || []).filter((a) => a.date.slice(0, 10) === iso(now));
+  if (daily) v.append(coachChip(daily));
+  v.append(weekCard());
+  v.append(recoveryCard());
 
-  const sl = latestSleep();
-  const sleepTile = () => {
-    if (!sl) return tile("Sleep", "–", "", "No sleep data");
-    const s = sl.v.sleep;
-    const c = tile("Sleep", fmtHM(s.sec), "", `${s.start || "?"} – ${s.end || "?"}${s.score ? " · score " + s.score : ""}`);
-    c.append(stageBar(s));
-    return c;
-  };
-  const rd = days.slice().reverse().find((x) => x.v.ready !== null && x.v.ready !== undefined);
-  const readyTile = () => (rd ? tile("Readiness", rd.v.ready, "", null, readinessStatus(rd.v.readyLevel, rd.v.ready))
-    : tile("Readiness", "–", "", "No data"));
-  const rhr7 = avg(days.map((x) => x.v.rhr));
-  const hv = days.slice().reverse().find((x) => x.v.hrv);
-  const restTiles = () => [
-    tile("Body Battery", t.bbHigh ?? "–", "",
-      t.bbLow !== null && t.bbLow !== undefined ? `Low ${t.bbLow} · +${t.bbCharged ?? 0} / −${t.bbDrained ?? 0}` : null),
-    tile("Resting HR", t.rhr ?? "–", "bpm", rhr7 ? `7-day avg ${Math.round(rhr7)}` : null),
-    tile("HRV", hv ? hv.v.hrv : "–", "ms", hv && hv.v.hrvWeek ? `7-day avg ${hv.v.hrvWeek}` : null),
-    tile("Stress", t.stress ?? "–", "", t.stress !== null && t.stress !== undefined
-      ? (t.stress < 26 ? "Rest" : t.stress < 51 ? "Low" : t.stress < 76 ? "Medium" : "High") : null),
-  ];
-  const grid = (items) => { const g = el("div", "grid2"); g.append(...items); return g; };
-
-  if (part === "morning") {
-    // Mornings lead with recovery: how did I sleep, how ready am I, what does the coach say.
-    if (daily) v.append(coachChip(daily));
-    v.append(grid([sleepTile(), readyTile()]));
-    v.append(ringsCard(t, week));
-    v.append(grid(restTiles()));
-  } else {
-    // Later in the day lead with what was done today.
-    v.append(ringsCard(t, week));
-    if (daily) v.append(coachChip(daily, true));
-    if (todays.length) {
-      v.append(el("h2", "section-title", todays.length > 1 ? "Today's workouts" : "Today's workout"));
-      for (const a of todays) v.append(activityCard(a, false));
+  const hl = highlights();
+  if (hl.length) {
+    v.append(el("h2", "section-title", "Highlights"));
+    const card = el("div", "card records");
+    for (const [icon, title, sub, date] of hl) {
+      const row = el("div", "record");
+      const left = el("div");
+      left.append(el("div", "record-label", `${icon}  ${title}`), el("div", "stat-sub", `${sub} · ${shortDay(date)}`));
+      row.append(left);
+      card.append(row);
     }
-    if (part === "night") {
-      const beds = dayList(7).map((x) => x.v.sleep && x.v.sleep.start).filter(Boolean);
-      if (beds.length) {
-        const mins = beds.map((s) => { const [h, m] = s.split(":").map(Number); return (h < 12 ? h + 24 : h) * 60 + m; });
-        const a = Math.round(avg(mins)) % (24 * 60);
-        v.append(tile("Usual bedtime", `${pad(Math.floor(a / 60))}:${pad(a % 60)}`, "", "Average of the last 7 nights"));
-      }
-    }
-    v.append(grid([sleepTile(), readyTile(), ...restTiles()]));
+    v.append(card);
   }
 
-  if (!todays.length) {
-    const last = (J.activities || [])[0];
-    if (last) {
-      v.append(el("h2", "section-title", "Latest workout"));
-      v.append(activityCard(last, false));
-    }
+  const last = (J.activities || [])[0];
+  if (last) {
+    v.append(el("h2", "section-title", "Latest workout"));
+    v.append(activityCard(last, true));
   }
+  v.append(el("h2", "section-title", "Consistency"));
+  v.append(weeksChart(8));
+
   const bits = [];
   if (J.profile && J.profile.vo2max) bits.push(`VO₂ max ${Math.round(J.profile.vo2max)}`);
   if (J.updated) bits.push("Synced " + new Date(J.updated).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
@@ -364,6 +420,7 @@ function renderHome() {
 }
 
 // ---------- Coach ----------
+
 
 function bullets(items) {
   const ul = el("ul", "bullets");
@@ -491,7 +548,7 @@ function renderActivity() {
   v.replaceChildren();
   const acts = J.activities || [];
   const month = acts.filter((a) => a.date.slice(0, 7) === iso(new Date()).slice(0, 7));
-  v.append(el("h1", "large-title", "Activity"),
+  v.append(el("h1", "large-title", "Workouts"),
     el("p", "eyebrow", `${month.length} workouts this month · ${fmtInt(month.reduce((s, a) => s + (a.kcal || 0), 0))} kcal`));
 
   const labels = ["All", "WOD", ...new Set(acts.map((a) => a.label))];
@@ -758,7 +815,7 @@ function recordsCard() {
 function weeklyTraining(weeks) {
   const start = new Date();
   start.setHours(12, 0, 0, 0);
-  start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - 7 * (weeks - 1)); // Monday, weeks ago
+  start.setDate(start.getDate() - start.getDay() - 7 * (weeks - 1)); // Sunday, weeks ago
   const buckets = Array.from({ length: weeks }, (_, k) => {
     const d = new Date(start); d.setDate(start.getDate() + 7 * k);
     return { key: iso(d), mins: { training: 0, padel: 0, run: 0, other: 0 } };
@@ -774,7 +831,7 @@ function weeklyTraining(weeks) {
 function renderTrends() {
   const v = $("view-trends");
   v.replaceChildren();
-  v.append(el("h1", "large-title", "Trends"));
+  v.append(el("h1", "large-title", "Progress"));
   const seg = el("div", "seg");
   for (const r of [14, 30, 90]) {
     const b = el("button", r === range ? "on" : "", r + " days");
@@ -788,57 +845,59 @@ function renderTrends() {
   const labels = ds.map((x) => x.key);
   const pick = (k) => ds.map((x) => (typeof x.v[k] === "number" ? x.v[k] : null));
 
-  const steps = pick("steps");
-  const goal = Math.round(avg(pick("stepGoal")) || 0) || null;
-  v.append(chartCard({
-    kind: "bar", title: "Steps", summary: [fmtInt(avg(steps)), "avg / day"], labels,
-    series: [{ cls: 3, values: steps }], goal,
-    tip: (i) => (steps[i] !== null ? [fmtInt(steps[i]), shortDay(labels[i])] : null),
-  }));
+  v.append(weeksChart(Math.max(4, Math.round(range / 7))));
 
-  const rhr = pick("rhr");
-  v.append(chartCard({
-    kind: "line", title: "Resting heart rate", summary: [fmtInt(avg(rhr)), "bpm avg"], labels,
-    series: [{ cls: 2, values: rhr }],
-    tip: (i) => (rhr[i] !== null ? [rhr[i] + " bpm", shortDay(labels[i])] : null),
-  }));
+  // Intensity of each session: average heart rate, colored by type.
+  const sessions = (J.activities || []).filter((a) => a.hr && parseDay(a.date) >= parseDay(labels[0])).slice().reverse();
+  if (sessions.length) {
+    const byGroup = (g) => sessions.map((a) => (groupOf(a).key === g.key ? Math.round(a.hr) : null));
+    const card = chartCard({
+      kind: "stack", title: "Session intensity", summary: [fmtInt(avg(sessions.map((a) => a.hr))), "avg HR"],
+      labels: sessions.map((a) => a.date), min: 0,
+      series: GROUPS.map((g) => ({ name: g.label, cls: g.cls, values: byGroup(g) })),
+      fmtAxis: (x) => Math.round(x) + "",
+      xLabel: (i) => shortDay(sessions[i].date),
+      tip: (i) => [Math.round(sessions[i].hr) + " bpm", `${sessions[i].name || sessions[i].label} · ${shortDay(sessions[i].date)}`],
+    });
+    card.append(legendFor(GROUPS.map((g) => [g.label, g.cls])));
+    v.append(card);
+  }
 
-  const hrv = pick("hrv");
-  v.append(chartCard({
-    kind: "line", title: "HRV (overnight)", summary: [fmtInt(avg(hrv)), "ms avg"], labels,
-    series: [{ cls: 1, values: hrv }],
-    tip: (i) => (hrv[i] !== null ? [hrv[i] + " ms", shortDay(labels[i])] : null),
-  }));
-
-  const bl = pick("bbLow"), bh = pick("bbHigh");
-  v.append(chartCard({
-    kind: "range", title: "Body Battery", summary: [fmtInt(avg(bh)), "avg high"], labels,
-    series: [{ cls: 3 }], lo: bl, hi: bh, min: 0, max: 100,
-    tip: (i) => (bh[i] !== null ? [`${bl[i]}–${bh[i]}`, shortDay(labels[i])] : null),
-  }));
-
-  const stress = pick("stress");
-  v.append(chartCard({
-    kind: "bar", title: "Stress", summary: [fmtInt(avg(stress)), "avg"], labels,
-    series: [{ cls: 4, values: stress }], max: 100,
-    tip: (i) => (stress[i] !== null ? [stress[i], shortDay(labels[i])] : null),
-  }));
-
-  const weeks = weeklyTraining(Math.max(4, Math.round(range / 7)));
-  const wk = (g) => weeks.map((w) => Math.round(w.mins[g]));
-  const card = chartCard({
-    kind: "stack", title: "Training minutes per week",
-    summary: [fmtInt(avg(weeks.map((w) => Object.values(w.mins).reduce((a, b) => a + b, 0)))), "min avg"],
-    labels: weeks.map((w) => w.key),
-    series: GROUPS.map((g) => ({ name: g.label, cls: g.cls, values: wk(g.key) })),
-    xLabel: (i) => shortDay(weeks[i].key),
-    tip: (i) => {
-      const parts = GROUPS.map((g) => [g.label, Math.round(weeks[i].mins[g.key])]).filter((p) => p[1]);
-      return parts.length ? [parts.reduce((s, p) => s + p[1], 0) + " min", "week of " + shortDay(weeks[i].key) + " · " + parts.map((p) => `${p[0]} ${p[1]}`).join(", ")] : null;
-    },
-  });
-  card.append(legendFor(GROUPS.map((g) => [g.label, g.cls])));
-  v.append(card);
+  // Most trained movements in the period (logged classes).
+  const vol = new Map();
+  for (const a of J.activities || []) {
+    if (!a.rounds || parseDay(a.date) < parseDay(labels[0])) continue;
+    for (const r of a.rounds) for (const s of r.sets) {
+      if (s.rest || !s.n) continue;
+      const key = s.ex + "|" + (s.unit || "reps");
+      vol.set(key, (vol.get(key) || 0) + s.n);
+    }
+  }
+  if (vol.size) {
+    const card = el("div", "card");
+    card.append(el("div", "chart-head"));
+    card.firstChild.append(el("div", "chart-title", "Most trained movements"), el("div", "chart-sum", `last ${range} days`));
+    // Reps first, then calories, then meters; each bar is scaled within its own unit.
+    const unitOf = (key) => key.split("|")[1];
+    const order = { reps: 0, cal: 1, m: 2 };
+    const rows = [...vol].sort((a, b) => (order[unitOf(a[0])] - order[unitOf(b[0])]) || b[1] - a[1]).slice(0, 10);
+    const maxBy = {};
+    for (const [key, n] of rows) maxBy[unitOf(key)] = Math.max(maxBy[unitOf(key)] || 0, n);
+    const list = el("div", "hbars");
+    for (const [key, n] of rows) {
+      const [ex, unit] = key.split("|");
+      const row = el("div", "hbar");
+      const bar = el("span", "hbar-fill");
+      bar.style.width = Math.max(4, Math.round((n / maxBy[unit]) * 100)) + "%";
+      const track = el("div", "hbar-track");
+      track.append(bar);
+      row.append(el("div", "hbar-label", ex), track,
+        el("div", "hbar-num", unit === "m" ? n.toLocaleString() + " m" : unit === "cal" ? n + " cal" : n.toLocaleString()));
+      list.append(row);
+    }
+    card.append(list);
+    v.append(card);
+  }
 
   v.append(el("h2", "section-title", "Personal records"));
   v.append(recordsCard());
@@ -856,6 +915,20 @@ function renderTrends() {
   while (kv.children.length % 3) kv.append(el("div")); // keep the grid's last row whole
   list.append(best.size ? kv : el("p", "empty", "No weighted movements yet."));
   v.append(list);
+
+  v.append(el("h2", "section-title", "Recovery"));
+  const rhr = pick("rhr");
+  v.append(chartCard({
+    kind: "line", title: "Resting heart rate", summary: [fmtInt(avg(rhr)), "bpm avg"], labels,
+    series: [{ cls: 2, values: rhr }],
+    tip: (i) => (rhr[i] !== null ? [rhr[i] + " bpm", shortDay(labels[i])] : null),
+  }));
+  const hrv = pick("hrv");
+  v.append(chartCard({
+    kind: "line", title: "HRV (overnight)", summary: [fmtInt(avg(hrv)), "ms avg"], labels,
+    series: [{ cls: 1, values: hrv }],
+    tip: (i) => (hrv[i] !== null ? [hrv[i] + " ms", shortDay(labels[i])] : null),
+  }));
 }
 
 // ---------- shell ----------

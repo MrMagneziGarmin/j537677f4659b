@@ -99,6 +99,38 @@ button { font: inherit; cursor: pointer; }
 .bullets { margin: 8px 0 0; padding-left: 18px; font-size: 15px; }
 .bullets li { margin: 4px 0; }
 
+/* lock mark: barbell */
+.lock-mark .bar { fill: var(--muted); }
+.lock-mark .p1 { fill: var(--s2); }
+.lock-mark .p2 { fill: var(--s1); }
+.lock-mark { transform: none; }
+
+/* this week */
+.kv.kv4 { grid-template-columns: repeat(2, 1fr); margin-top: 10px; }
+.kv.kv4 em { display: block; font-style: normal; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.weekstrip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 14px; }
+.wday { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; border-radius: 12px; background: var(--card-2); }
+.wday.now { outline: 1.5px solid var(--tint); }
+.wday-name { font-size: 12px; color: var(--muted); font-weight: 600; }
+.wdots { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; min-height: 10px; max-width: 34px; }
+.wdots i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+.wdots i.g1 { background: var(--s1); } .wdots i.g2 { background: var(--s2); }
+.wdots i.g3 { background: var(--s3); } .wdots i.g4 { background: var(--s4); }
+
+/* recovery row */
+.recovery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; border: 0; text-align: left; color: var(--text); font: inherit; }
+.recovery > div { display: flex; flex-direction: column; gap: 3px; }
+.recovery b { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.recovery .status { margin-top: 0; font-size: 12px; }
+
+/* most trained movements */
+.hbars { display: grid; gap: 10px; margin-top: 12px; }
+.hbar { display: grid; grid-template-columns: 40% 1fr auto; align-items: center; gap: 10px; font-size: 14px; }
+.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hbar-track { height: 10px; background: var(--card-2); border-radius: 6px; overflow: hidden; }
+.hbar-fill { display: block; height: 100%; background: var(--s1); border-radius: 6px; }
+.hbar-num { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+
 /* records */
 .records { padding: 4px 16px; }
 .record { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 0; border-top: 0.5px solid var(--hair); }
