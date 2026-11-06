@@ -83,6 +83,28 @@ button { font: inherit; cursor: pointer; }
   border-bottom: 0.5px solid var(--hair);
 }
 .bar-title { font-weight: 600; font-size: 17px; }
+.bar-actions { display: flex; align-items: center; gap: 14px; }
+.icon-btn { background: none; border: 0; padding: 2px; color: var(--tint); display: grid; place-items: center; }
+.icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.pill { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--card-2); padding: 3px 9px; border-radius: 999px; }
+
+/* coach */
+.coach-chip { display: block; width: 100%; text-align: left; border: 0; color: var(--text); font: inherit; }
+.coach-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.coach-top .status { margin-top: 0; }
+.coach-headline { font-size: 17px; font-weight: 600; margin-top: 8px; line-height: 1.3; }
+.coach-big { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; margin-top: 8px; line-height: 1.25; }
+.coach-sub { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; margin-top: 14px; }
+.coach-plan { margin-top: 12px; padding: 10px 12px; background: var(--card-2); border-radius: 12px; font-size: 15px; }
+.bullets { margin: 8px 0 0; padding-left: 18px; font-size: 15px; }
+.bullets li { margin: 4px 0; }
+
+/* records */
+.records { padding: 4px 16px; }
+.record { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 0; border-top: 0.5px solid var(--hair); }
+.record:first-child { border-top: 0; }
+.record-label { font-weight: 600; }
+.record-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .link { background: none; border: 0; color: var(--tint); padding: 4px 0; font-size: 17px; }
 .view { animation: fade .22s ease; }
 @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -105,7 +127,8 @@ button { font: inherit; cursor: pointer; }
 
 /* ---------- cards & tiles ---------- */
 .card { background: var(--card); border-radius: 22px; padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; position: relative; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.card .grid2 { margin-bottom: 0; }
 .grid2 .card { margin: 0; }
 .tile-label { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .02em; }
 .stat-value { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; margin-top: 6px; line-height: 1.1; }

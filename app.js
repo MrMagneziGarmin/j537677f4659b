@@ -7,7 +7,12 @@ const AAD = new TextEncoder().encode("wod-journal-v1");
 const AUTO_LOCK_MS = 2 * 60 * 1000;
 const SVG = "http://www.w3.org/2000/svg";
 let J = null;          // the decrypted journal
+let KEY = null;        // non-extractable AES key, in memory only while unlocked
+let SALT = null;       // the salt KEY was derived with; a new salt means the password changed
+let current = "home";  // the view on screen
+let syncUntil = 0;     // while a sync is expected, check for new data
 let hiddenAt = 0;
+const SYNC_SHORTCUT = "Sync Journal";
 let range = 30;        // trends range in days
 let filter = "All";    // activity filter
 
@@ -33,15 +38,24 @@ function svg(tag, attrs, parent) {
 
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
-async function decrypt(box, password) {
+async function deriveKey(password, box) {
   if (box.v !== 1 || box.kdf !== "PBKDF2-SHA256") throw new Error("Unknown format");
   const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
-  const key = await crypto.subtle.deriveKey(
+  return crypto.subtle.deriveKey(
     { name: "PBKDF2", hash: "SHA-256", salt: unb64(box.salt), iterations: box.iter },
     base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+}
+
+async function openBox(key, box) {
   const plain = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: unb64(box.iv), additionalData: AAD }, key, unb64(box.ct));
   return JSON.parse(new TextDecoder().decode(plain));
+}
+
+async function fetchBox() {
+  const res = await fetch("data.enc?t=" + Date.now(), { cache: "no-store", credentials: "omit" });
+  if (!res.ok) throw new Error("missing");
+  return res.json();
 }
 
 async function unlock(event) {
@@ -50,14 +64,15 @@ async function unlock(event) {
   button.disabled = true;
   status.textContent = "Unlocking…";
   try {
-    const res = await fetch("data.enc", { cache: "no-store", credentials: "omit" });
-    if (!res.ok) throw new Error("missing");
-    J = await decrypt(await res.json(), input.value);
+    const box = await fetchBox();
+    KEY = await deriveKey(input.value, box);
+    J = await openBox(KEY, box);
+    SALT = box.salt;
     input.value = "";
     status.textContent = "";
     start();
   } catch (err) {
-    J = null;
+    J = null; KEY = null;
     status.textContent = err && err.name === "OperationError" ? "Wrong password." : "Couldn't open the journal.";
   } finally {
     button.disabled = false;
@@ -65,8 +80,46 @@ async function unlock(event) {
 }
 
 function lock() {
-  J = null;
-  window.location.reload(); // drops every decrypted value from memory
+  J = null; KEY = null;
+  window.location.reload(); // drops every decrypted value and the key from memory
+}
+
+// ---------- sync ----------
+
+function setSyncState(text) {
+  $("syncState").textContent = text || "";
+  $("syncState").hidden = !text;
+}
+
+/** Loads the latest published journal with the key in memory. Returns true if it changed. */
+async function refreshData() {
+  if (!KEY) return false;
+  try {
+    const box = await fetchBox();
+    if (box.salt !== SALT) { setSyncState("Password changed: lock and unlock"); return false; }
+    const next = await openBox(KEY, box);
+    if (next.updated === J.updated) return false;
+    J = next;
+    show(current, true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sync() {
+  // The GitHub key lives in the iPhone Shortcut, never in this page.
+  syncUntil = Date.now() + 6 * 60 * 1000;
+  setSyncState("Syncing…");
+  window.location.href = "shortcuts://run-shortcut?name=" + encodeURIComponent(SYNC_SHORTCUT);
+  poll();
+}
+
+async function poll() {
+  if (!syncUntil) return;
+  if (await refreshData()) { syncUntil = 0; setSyncState("Updated"); setTimeout(() => setSyncState(""), 4000); return; }
+  if (Date.now() > syncUntil) { syncUntil = 0; setSyncState(""); return; }
+  setTimeout(poll, 20000);
 }
 
 // ---------- data helpers ----------
@@ -208,52 +261,163 @@ function latestSleep() {
   return dayList(3).reverse().find((x) => x.v.sleep);
 }
 
-function renderToday() {
-  const v = $("view-today");
+function partOfDay(h) {
+  if (h >= 5 && h < 12) return "morning";
+  if (h >= 12 && h < 17) return "afternoon";
+  if (h >= 17 && h < 22) return "evening";
+  return "night";
+}
+
+const CALLS = {
+  push: ["good", "Push day"], normal: ["good", "Train as planned"],
+  easy: ["warning", "Keep it easy"], rest: ["serious", "Rest day"],
+};
+
+function coachChip(daily, compact) {
+  const card = el("button", "card coach-chip");
+  card.type = "button";
+  card.addEventListener("click", () => show("coach"));
+  const [cls, text] = CALLS[daily.call] || ["good", "Coach"];
+  const top = el("div", "coach-top");
+  top.append(el("span", "tile-label", "Coach"), el("span", "status " + cls, text));
+  card.append(top, el("div", "coach-headline", daily.headline));
+  if (!compact && daily.plan) card.append(el("div", "stat-sub", daily.plan));
+  return card;
+}
+
+function renderHome() {
+  const v = $("view-home");
   v.replaceChildren();
+  const now = new Date();
+  const part = partOfDay(now.getHours());
+  const first = J.profile && J.profile.first;
+  v.append(el("h1", "large-title", `Good ${part}${first ? ", " + first : ""}`),
+    el("p", "eyebrow", dayName(now, { weekday: "long", day: "numeric", month: "long" })));
+
   const days = dayList(7);
-  const todayEntry = days[days.length - 1];
-  const t = todayEntry.v;
-  v.append(el("h1", "large-title", "Today"),
-    el("p", "eyebrow", dayName(new Date(), { weekday: "long", day: "numeric", month: "long" })));
-
+  const t = days[days.length - 1].v;
   // Garmin's week: Monday to today, vigorous minutes count double.
-  const sinceMonday = days.slice(days.length - 1 - ((new Date().getDay() + 6) % 7));
+  const sinceMonday = days.slice(days.length - 1 - ((now.getDay() + 6) % 7));
   const week = { minutes: sinceMonday.reduce((sum, x) => sum + (x.v.imMod || 0) + 2 * (x.v.imVig || 0), 0) };
-  v.append(ringsCard(t, week));
+  const daily = J.coach && J.coach.daily && J.coach.daily.date === iso(now) ? J.coach.daily : null;
+  const todays = (J.activities || []).filter((a) => a.date.slice(0, 10) === iso(now));
 
-  const grid = el("div", "grid2");
   const sl = latestSleep();
-  if (sl) {
+  const sleepTile = () => {
+    if (!sl) return tile("Sleep", "–", "", "No sleep data");
     const s = sl.v.sleep;
     const c = tile("Sleep", fmtHM(s.sec), "", `${s.start || "?"} – ${s.end || "?"}${s.score ? " · score " + s.score : ""}`);
     c.append(stageBar(s));
-    grid.append(c);
-  } else grid.append(tile("Sleep", "–", "", "No sleep data"));
-
+    return c;
+  };
   const rd = days.slice().reverse().find((x) => x.v.ready !== null && x.v.ready !== undefined);
-  grid.append(rd ? tile("Readiness", rd.v.ready, "", null, readinessStatus(rd.v.readyLevel, rd.v.ready))
+  const readyTile = () => (rd ? tile("Readiness", rd.v.ready, "", null, readinessStatus(rd.v.readyLevel, rd.v.ready))
     : tile("Readiness", "–", "", "No data"));
-
-  grid.append(tile("Body Battery", t.bbHigh ?? "–", "",
-    t.bbLow !== null && t.bbLow !== undefined ? `Low ${t.bbLow} · +${t.bbCharged ?? 0} / −${t.bbDrained ?? 0}` : null));
   const rhr7 = avg(days.map((x) => x.v.rhr));
-  grid.append(tile("Resting HR", t.rhr ?? "–", "bpm", rhr7 ? `7-day avg ${Math.round(rhr7)}` : null));
   const hv = days.slice().reverse().find((x) => x.v.hrv);
-  grid.append(tile("HRV", hv ? hv.v.hrv : "–", "ms", hv && hv.v.hrvWeek ? `7-day avg ${hv.v.hrvWeek}` : null));
-  grid.append(tile("Stress", t.stress ?? "–", "", t.stress !== null && t.stress !== undefined
-    ? (t.stress < 26 ? "Rest" : t.stress < 51 ? "Low" : t.stress < 76 ? "Medium" : "High") : null));
-  v.append(grid);
+  const restTiles = () => [
+    tile("Body Battery", t.bbHigh ?? "–", "",
+      t.bbLow !== null && t.bbLow !== undefined ? `Low ${t.bbLow} · +${t.bbCharged ?? 0} / −${t.bbDrained ?? 0}` : null),
+    tile("Resting HR", t.rhr ?? "–", "bpm", rhr7 ? `7-day avg ${Math.round(rhr7)}` : null),
+    tile("HRV", hv ? hv.v.hrv : "–", "ms", hv && hv.v.hrvWeek ? `7-day avg ${hv.v.hrvWeek}` : null),
+    tile("Stress", t.stress ?? "–", "", t.stress !== null && t.stress !== undefined
+      ? (t.stress < 26 ? "Rest" : t.stress < 51 ? "Low" : t.stress < 76 ? "Medium" : "High") : null),
+  ];
+  const grid = (items) => { const g = el("div", "grid2"); g.append(...items); return g; };
 
-  const last = (J.activities || [])[0];
-  if (last) {
-    v.append(el("h2", "section-title", "Latest workout"));
-    v.append(activityCard(last, true));
+  if (part === "morning") {
+    // Mornings lead with recovery: how did I sleep, how ready am I, what does the coach say.
+    if (daily) v.append(coachChip(daily));
+    v.append(grid([sleepTile(), readyTile()]));
+    v.append(ringsCard(t, week));
+    v.append(grid(restTiles()));
+  } else {
+    // Later in the day lead with what was done today.
+    v.append(ringsCard(t, week));
+    if (daily) v.append(coachChip(daily, true));
+    if (todays.length) {
+      v.append(el("h2", "section-title", todays.length > 1 ? "Today's workouts" : "Today's workout"));
+      for (const a of todays) v.append(activityCard(a, false));
+    }
+    if (part === "night") {
+      const beds = dayList(7).map((x) => x.v.sleep && x.v.sleep.start).filter(Boolean);
+      if (beds.length) {
+        const mins = beds.map((s) => { const [h, m] = s.split(":").map(Number); return (h < 12 ? h + 24 : h) * 60 + m; });
+        const a = Math.round(avg(mins)) % (24 * 60);
+        v.append(tile("Usual bedtime", `${pad(Math.floor(a / 60))}:${pad(a % 60)}`, "", "Average of the last 7 nights"));
+      }
+    }
+    v.append(grid([sleepTile(), readyTile(), ...restTiles()]));
+  }
+
+  if (!todays.length) {
+    const last = (J.activities || [])[0];
+    if (last) {
+      v.append(el("h2", "section-title", "Latest workout"));
+      v.append(activityCard(last, false));
+    }
   }
   const bits = [];
   if (J.profile && J.profile.vo2max) bits.push(`VO₂ max ${Math.round(J.profile.vo2max)}`);
-  if (J.updated) bits.push("Updated " + new Date(J.updated).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
+  if (J.updated) bits.push("Synced " + new Date(J.updated).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }));
   v.append(el("p", "stat-sub", bits.join(" · ")));
+}
+
+// ---------- Coach ----------
+
+function bullets(items) {
+  const ul = el("ul", "bullets");
+  for (const it of items || []) ul.append(el("li", null, it));
+  return ul;
+}
+
+function renderCoach() {
+  const v = $("view-coach");
+  v.replaceChildren();
+  v.append(el("h1", "large-title", "Coach"));
+  const c = J.coach || {};
+  if (!c.daily && !c.weekly && !Object.keys(c.workouts || {}).length) {
+    v.append(el("p", "eyebrow", "Your coach writes a brief each morning, a review after each class and one each week."),
+      el("p", "empty", "Nothing yet: the first reports arrive with the next sync."));
+    return;
+  }
+  v.append(el("p", "eyebrow", "Based on your Garmin data and logged classes"));
+
+  if (c.daily) {
+    const d = c.daily;
+    const card = el("div", "card");
+    const [cls, text] = CALLS[d.call] || ["good", ""];
+    const top = el("div", "coach-top");
+    top.append(el("span", "tile-label", d.date === iso(new Date()) ? "Today" : shortDay(d.date)), el("span", "status " + cls, text));
+    card.append(top, el("div", "coach-big", d.headline), bullets(d.points));
+    if (d.plan) { const p = el("div", "coach-plan"); p.append(el("b", null, "Plan  "), document.createTextNode(d.plan)); card.append(p); }
+    v.append(card);
+  }
+
+  if (c.weekly) {
+    const w = c.weekly;
+    v.append(el("h2", "section-title", "This week"));
+    const card = el("div", "card");
+    card.append(el("div", "tile-label", "Week of " + shortDay(w.week)), el("div", "coach-big", w.headline));
+    for (const [title, items] of [["Wins", w.wins], ["Watch", w.watch], ["Focus", w.focus]]) {
+      if (!items || !items.length) continue;
+      card.append(el("div", "coach-sub", title), bullets(items));
+    }
+    if (w.next_week) { const p = el("div", "coach-plan"); p.append(el("b", null, "Next week  "), document.createTextNode(w.next_week)); card.append(p); }
+    v.append(card);
+  }
+
+  const reviews = (J.activities || []).filter((a) => (c.workouts || {})[String(a.id)]);
+  if (reviews.length) {
+    v.append(el("h2", "section-title", "Class reviews"));
+    for (const a of reviews) {
+      const r = c.workouts[String(a.id)];
+      const card = el("div", "card");
+      card.append(el("div", "tile-label", `${shortDay(a.date)} · ${a.name || a.label}`), el("div", "coach-headline", r.headline), bullets(r.points));
+      v.append(card);
+    }
+  }
+  v.append(el("p", "stat-sub", "Tell the coach your goals: edit coach/goals.md in your GitHub repository."));
 }
 
 // ---------- Activity ----------
@@ -565,6 +729,32 @@ function renderSleep() {
 
 // ---------- Trends ----------
 
+function fmtClock(sec) {
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return (h ? h + ":" + pad(m) : m) + ":" + pad(s % 60);
+}
+
+function recordsCard() {
+  const card = el("div", "card records");
+  const recs = J.records || [];
+  if (!recs.length) { card.append(el("p", "empty", "No records yet.")); return card; }
+  for (const r of recs) {
+    const row = el("div", "record");
+    const left = el("div");
+    left.append(el("div", "record-label", r.label));
+    const sub = [r.pace ? fmtClock(r.pace) + " /km" : null, r.date ? shortDay(r.date) + " " + r.date.slice(0, 4) : null];
+    left.append(el("div", "stat-sub", sub.filter(Boolean).join(" · ")));
+    const value = r.kind === "time" ? fmtClock(r.value)
+      : r.kind === "distance" ? (r.value / 1000).toFixed(2) + " km"
+      : r.kind === "days" ? Math.round(r.value) + (Math.round(r.value) === 1 ? " day" : " days")
+      : fmtInt(r.value);
+    row.append(left, el("div", "record-value", value));
+    card.append(row);
+  }
+  return card;
+}
+
 function weeklyTraining(weeks) {
   const start = new Date();
   start.setHours(12, 0, 0, 0);
@@ -650,52 +840,52 @@ function renderTrends() {
   card.append(legendFor(GROUPS.map((g) => [g.label, g.cls])));
   v.append(card);
 
+  v.append(el("h2", "section-title", "Personal records"));
+  v.append(recordsCard());
+
   v.append(el("h2", "section-title", "Heaviest loads"));
   const best = new Map();
-  const dist = new Map();
   for (const a of J.activities || []) for (const r of a.rounds || []) for (const s of r.sets) {
-    if (s.rest) continue;
-    if (s.kg && s.kg > (best.get(s.ex) || 0)) best.set(s.ex, s.kg);
-    if (s.unit === "m" && s.n) dist.set(s.ex, (dist.get(s.ex) || 0) + s.n);
+    if (!s.rest && s.kg && s.kg > (best.get(s.ex) || 0)) best.set(s.ex, s.kg);
   }
   const list = el("div", "card");
   const kv = el("div", "kv");
   [...best].sort((a, b) => b[1] - a[1]).slice(0, 9).forEach(([ex, kg]) => {
     const d = el("div"); d.append(el("b", null, kg + " kg"), el("span", null, ex)); kv.append(d);
   });
-  [...dist].forEach(([ex, m]) => {
-    const d = el("div"); d.append(el("b", null, m.toLocaleString() + " m"), el("span", null, ex + " total")); kv.append(d);
-  });
   while (kv.children.length % 3) kv.append(el("div")); // keep the grid's last row whole
-  list.append(best.size || dist.size ? kv : el("p", "empty", "No weighted movements yet."));
+  list.append(best.size ? kv : el("p", "empty", "No weighted movements yet."));
   v.append(list);
 }
 
 // ---------- shell ----------
 
-const RENDER = { today: renderToday, activity: renderActivity, sleep: renderSleep, trends: renderTrends };
+const RENDER = { home: renderHome, activity: renderActivity, sleep: renderSleep, trends: renderTrends, coach: renderCoach };
 
-function show(view) {
+function show(view, keepScroll) {
+  current = view;
   for (const b of document.querySelectorAll(".tab")) b.classList.toggle("active", b.dataset.view === view);
   for (const key of Object.keys(RENDER)) $("view-" + key).hidden = key !== view;
   $("barTitle").textContent = $("view-" + view).dataset.title;
   RENDER[view]();
-  window.scrollTo(0, 0);
+  if (!keepScroll) window.scrollTo(0, 0);
 }
 
 function start() {
   $("lock").hidden = true;
   $("app").hidden = false;
-  show("today");
+  show("home");
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) hiddenAt = Date.now();
-  else if (J && hiddenAt && Date.now() - hiddenAt > AUTO_LOCK_MS) lock();
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (J && hiddenAt && Date.now() - hiddenAt > AUTO_LOCK_MS && !syncUntil) { lock(); return; }
+  if (J) refreshData(); // back from the Sync Shortcut (or anywhere): pick up new data
 });
 
 document.addEventListener("DOMContentLoaded", () => {
   $("unlock").addEventListener("submit", unlock);
   $("lockBtn").addEventListener("click", lock);
+  $("syncBtn").addEventListener("click", sync);
   for (const b of document.querySelectorAll(".tab")) b.addEventListener("click", () => show(b.dataset.view));
 });
