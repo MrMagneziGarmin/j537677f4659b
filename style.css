@@ -450,24 +450,26 @@ button { font: inherit; cursor: pointer; }
   font-weight: 600; box-shadow: var(--shadow); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .sheet, .sheet-backdrop { animation: none; } }
 
-/* body heatmap */
-.body-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+/* body heatmap: warm scale, yellow (light) -> orange -> red (fried) */
+:root { --lv-light: #f2c12e; --lv-worked: #f07f22; --lv-fried: #e2332b; --lv-fresh: #d6d6dc; --sil: #ececf0; --sil-line: #b9b9c0; }
+@media (prefers-color-scheme: dark) {
+  :root { --lv-light: #f5c518; --lv-worked: #f2802a; --lv-fried: #ef3a32; --lv-fresh: #3a3a3e; --sil: #141416; --sil-line: #8e8e93; }
+}
+.body-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 10px; }
 .body-col { display: flex; flex-direction: column; align-items: center; }
-.body-fig { width: 100%; max-width: 150px; height: auto; display: block; }
-.body-side { font-size: 12px; color: var(--muted); margin-top: 4px; }
-.body-sil * { fill: var(--card-2); }
-.mus { fill: var(--grid); stroke: var(--card); stroke-width: 1; cursor: pointer; transition: opacity .2s; }
-.mus.lv-light { fill: var(--s2); fill-opacity: .32; }
-.mus.lv-worked { fill: var(--s2); fill-opacity: .62; }
-.mus.lv-fried { fill: var(--s2); fill-opacity: 1; }
-.mus.sore { stroke: var(--critical); stroke-width: 1.6; stroke-dasharray: 2.5 1.5; }
+.body-fig { width: 100%; max-width: 170px; height: auto; display: block; }
+.body-side { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.body-sil { fill: var(--sil); stroke: var(--sil-line); stroke-width: 1.4; }
+.mus { fill: var(--lv-fresh); stroke: var(--sil); stroke-width: 1.6; stroke-linejoin: round; cursor: pointer; transition: opacity .2s; }
+.mus.lv-light { fill: var(--lv-light); } .mus.lv-worked { fill: var(--lv-worked); } .mus.lv-fried { fill: var(--lv-fried); }
+.mus.sore { stroke: var(--text); stroke-width: 1.8; stroke-dasharray: 4 2.5; }
 .mus:active { opacity: .6; }
 .body-legend i { width: 12px; height: 12px; border-radius: 4px; }
-.body-legend i.lv-fresh, .lv-bar span.lv-fresh { background: var(--grid); }
-.body-legend i.lv-light, .lv-bar span.lv-light { background: color-mix(in srgb, var(--s2) 32%, transparent); }
-.body-legend i.lv-worked, .lv-bar span.lv-worked { background: color-mix(in srgb, var(--s2) 62%, transparent); }
-.body-legend i.lv-fried, .lv-bar span.lv-fried { background: var(--s2); }
-.body-legend i.lv-sore { background: transparent; border: 1.6px dashed var(--critical); }
+.body-legend i.lv-fresh, .lv-bar span.lv-fresh { background: var(--lv-fresh); }
+.body-legend i.lv-light, .lv-bar span.lv-light { background: var(--lv-light); }
+.body-legend i.lv-worked, .lv-bar span.lv-worked { background: var(--lv-worked); }
+.body-legend i.lv-fried, .lv-bar span.lv-fried { background: var(--lv-fried); }
+.body-legend i.lv-sore { background: transparent; border: 1.6px dashed var(--text); }
 .body-notes p { margin: 10px 0 0; font-size: 14px; color: var(--text-2); }
 .lv-bar { height: 8px; border-radius: 4px; background: var(--grid); margin-top: 12px; overflow: hidden; }
 .lv-bar span { display: block; height: 100%; border-radius: 4px; }

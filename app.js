@@ -1752,58 +1752,69 @@ function muscleState() {
   return out;
 }
 
-// Simple front and back figures; each muscle is one or two shapes.
-const BODY = {
+// Anatomical figures, drawn here: left-side outlines, mirrored, smoothed into curves.
+const MID = 100;
+const mirror = (pts) => pts.map(([x, y]) => [2 * MID - x, y]);
+
+/** A closed, smooth path through the points (Catmull-Rom). */
+function smooth(pts) {
+  const n = pts.length;
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += `C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0]},${p2[1]}`;
+  }
+  return d + "Z";
+}
+
+const OUTLINE = [[90, 62], [89, 80], [76, 86], [60, 92], [48, 102], [42, 122], [40, 150], [36, 180], [32, 200], [26, 232],
+  [22, 258], [16, 270], [12, 286], [18, 296], [27, 291], [31, 279], [36, 262], [44, 232], [50, 204], [56, 172], [60, 144],
+  [64, 162], [66, 196], [62, 226], [58, 262], [60, 300], [66, 326], [64, 352], [68, 386], [71, 400], [64, 411], [91, 413],
+  [92, 398], [94, 360], [96, 326], [98, 292], [100, 260]];
+const SILHOUETTE = smooth([...OUTLINE, ...mirror(OUTLINE.slice(0, -1)).reverse()]);
+
+// [muscle, left-side points, mirrored?]
+const FIG = {
   front: [
-    ["SHOULDERS", "ellipse", [31, 50, 7, 8]], ["SHOULDERS", "ellipse", [89, 50, 7, 8]],
-    ["CHEST", "rect", [38, 45, 21, 19, 6]], ["CHEST", "rect", [61, 45, 21, 19, 6]],
-    ["BICEPS", "ellipse", [29, 74, 5, 13]], ["BICEPS", "ellipse", [91, 74, 5, 13]],
-    ["FOREARM", "ellipse", [27, 112, 4.5, 15]], ["FOREARM", "ellipse", [93, 112, 4.5, 15]],
-    ["ABS", "rect", [51, 67, 18, 42, 5]],
-    ["OBLIQUES", "rect", [42, 70, 8, 34, 4]], ["OBLIQUES", "rect", [70, 70, 8, 34, 4]],
-    ["HIPS", "ellipse", [49, 121, 7, 5]], ["HIPS", "ellipse", [71, 121, 7, 5]],
-    ["QUADS", "ellipse", [47, 156, 7.5, 25]], ["QUADS", "ellipse", [73, 156, 7.5, 25]],
-    ["ADDUCTORS", "ellipse", [56, 146, 3, 13]], ["ADDUCTORS", "ellipse", [64, 146, 3, 13]],
-    ["CALVES", "ellipse", [48, 211, 5, 19]], ["CALVES", "ellipse", [72, 211, 5, 19]],
+    ["SHOULDERS", [[68, 92], [56, 97], [47, 110], [45, 130], [53, 128], [61, 114], [72, 100]], true],
+    ["CHEST", [[74, 97], [97, 95], [97, 131], [84, 136], [71, 130], [64, 117]], true],
+    ["BICEPS", [[48, 134], [56, 131], [58, 152], [54, 180], [46, 188], [42, 170], [44, 150]], true],
+    ["FOREARM", [[39, 201], [48, 199], [46, 222], [38, 254], [31, 255], [31, 236]], true],
+    ["ABS", [[88, 140], [97, 140], [97, 222], [90, 220], [86, 192], [86, 160]], true],
+    ["OBLIQUES", [[70, 142], [83, 146], [84, 198], [78, 214], [68, 200], [66, 170]], true],
+    ["HIPS", [[71, 216], [86, 223], [91, 241], [80, 243], [67, 230]], true],
+    ["QUADS", [[63, 238], [78, 246], [91, 264], [90, 300], [81, 318], [69, 313], [62, 282]], true],
+    ["ADDUCTORS", [[93, 260], [98, 262], [96, 294], [92, 291]], true],
+    ["CALVES", [[69, 338], [80, 336], [81, 369], [75, 383], [68, 366]], true],
   ],
   back: [
-    ["TRAPS", "path", "M60 33L80 45L60 72L40 45Z"],
-    ["SHOULDERS", "ellipse", [31, 50, 7, 8]], ["SHOULDERS", "ellipse", [89, 50, 7, 8]],
-    ["LATS", "path", "M40 52L53 62L55 100L43 92Z"], ["LATS", "path", "M80 52L67 62L65 100L77 92Z"],
-    ["TRICEPS", "ellipse", [29, 74, 5, 13]], ["TRICEPS", "ellipse", [91, 74, 5, 13]],
-    ["FOREARM", "ellipse", [27, 112, 4.5, 15]], ["FOREARM", "ellipse", [93, 112, 4.5, 15]],
-    ["LOWER_BACK", "rect", [52, 88, 16, 24, 4]],
-    ["GLUTES", "ellipse", [51, 128, 9, 10]], ["GLUTES", "ellipse", [69, 128, 9, 10]],
-    ["ABDUCTORS", "ellipse", [41, 130, 3, 9]], ["ABDUCTORS", "ellipse", [79, 130, 3, 9]],
-    ["HAMSTRINGS", "ellipse", [49, 163, 7, 22]], ["HAMSTRINGS", "ellipse", [71, 163, 7, 22]],
-    ["CALVES", "ellipse", [49, 208, 6, 17]], ["CALVES", "ellipse", [71, 208, 6, 17]],
+    ["TRAPS", [[100, 66], [111, 80], [133, 91], [117, 110], [100, 150], [83, 110], [67, 91], [89, 80]], false],
+    ["SHOULDERS", [[68, 92], [56, 97], [47, 110], [45, 130], [53, 128], [61, 114], [72, 100]], true],
+    ["LATS", [[67, 116], [84, 120], [97, 168], [92, 198], [76, 194], [66, 158]], true],
+    ["TRICEPS", [[44, 132], [54, 131], [57, 158], [50, 186], [42, 182], [40, 156]], true],
+    ["FOREARM", [[39, 201], [48, 199], [46, 222], [38, 254], [31, 255], [31, 236]], true],
+    ["LOWER_BACK", [[89, 190], [111, 190], [113, 222], [100, 229], [87, 222]], false],
+    ["ABDUCTORS", [[60, 224], [67, 222], [65, 248], [60, 244]], true],
+    ["GLUTES", [[69, 225], [96, 229], [98, 262], [86, 272], [71, 266], [65, 248]], true],
+    ["HAMSTRINGS", [[65, 274], [92, 278], [92, 312], [86, 322], [72, 320], [63, 300]], true],
+    ["CALVES", [[67, 332], [88, 332], [90, 362], [82, 384], [72, 382], [64, 358]], true],
   ],
 };
 
 function figure(side, state, onPick) {
-  const root = svg("svg", { viewBox: "0 0 120 246", class: "body-fig", role: "img", "aria-label": side === "front" ? "Front" : "Back" });
-  // Silhouette.
-  const sil = svg("g", { class: "body-sil" }, root);
-  svg("circle", { cx: 60, cy: 17, r: 11 }, sil);
-  svg("rect", { x: 54, y: 26, width: 12, height: 10, rx: 3 }, sil);
-  svg("path", { d: "M34 40Q60 34 86 40L84 112Q82 126 80 132L40 132Q38 126 36 112Z" }, sil);
-  svg("rect", { x: 22, y: 42, width: 13, height: 52, rx: 6.5 }, sil);
-  svg("rect", { x: 85, y: 42, width: 13, height: 52, rx: 6.5 }, sil);
-  svg("rect", { x: 21, y: 94, width: 11, height: 44, rx: 5.5 }, sil);
-  svg("rect", { x: 88, y: 94, width: 11, height: 44, rx: 5.5 }, sil);
-  svg("rect", { x: 39, y: 124, width: 20, height: 68, rx: 9 }, sil);
-  svg("rect", { x: 61, y: 124, width: 20, height: 68, rx: 9 }, sil);
-  svg("rect", { x: 41, y: 190, width: 16, height: 46, rx: 7 }, sil);
-  svg("rect", { x: 63, y: 190, width: 16, height: 46, rx: 7 }, sil);
-  for (const [m, kind, g] of BODY[side]) {
+  const root = svg("svg", { viewBox: "0 0 200 420", class: "body-fig", role: "img", "aria-label": side === "front" ? "Front" : "Back" });
+  svg("path", { d: SILHOUETTE, class: "body-sil" }, root);
+  svg("ellipse", { cx: 100, cy: 36, rx: 21, ry: 26, class: "body-sil" }, root);
+  for (const [m, pts, both] of FIG[side]) {
     const st = state[m];
     const lv = st ? levelOf(st.load) : "fresh";
-    const attrs = { class: `mus lv-${lv}${st && st.sore ? " sore" : ""}`, "data-m": m };
-    let node;
-    if (kind === "ellipse") node = svg("ellipse", { ...attrs, cx: g[0], cy: g[1], rx: g[2], ry: g[3] }, root);
-    else if (kind === "rect") node = svg("rect", { ...attrs, x: g[0], y: g[1], width: g[2], height: g[3], rx: g[4] }, root);
-    else node = svg("path", { ...attrs, d: g }, root);
-    node.addEventListener("click", () => onPick(m));
+    const cls = `mus lv-${lv}${st && st.sore ? " sore" : ""}`;
+    for (const shape of both ? [pts, mirror(pts)] : [pts]) {
+      const node = svg("path", { d: smooth(shape), class: cls, "data-m": m }, root);
+      node.addEventListener("click", () => onPick(m));
+    }
   }
   return root;
 }
