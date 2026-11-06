@@ -1030,6 +1030,8 @@ function maxEfforts() {
 }
 
 function renderBests(v) {
+  v.append(el("h2", "section-title", "Body"));
+  v.append(bodyCard());
   const recs = J.records || [];
   const running = recs.filter((r) => r.kind === "time" || r.kind === "distance");
   v.append(el("h2", "section-title", "Running bests"));
@@ -1706,6 +1708,179 @@ function heroCard() {
   card.append(stats);
   if (daily && daily.plan) card.append(el("div", "hero-plan", "Plan · " + planText(daily.plan)));
   return card;
+}
+
+// ---------- Body: which muscles are loaded right now ----------
+// Same numbers as muscles.py: minutes of work per muscle, fading by half every ~25 hours.
+
+const MUSCLE_NAMES = {
+  QUADS: "Quads", HAMSTRINGS: "Hamstrings", GLUTES: "Glutes", CALVES: "Calves", HIPS: "Hip flexors",
+  ADDUCTORS: "Adductors", ABDUCTORS: "Abductors", ABS: "Abs", OBLIQUES: "Obliques", LOWER_BACK: "Lower back",
+  LATS: "Lats", TRAPS: "Traps", SHOULDERS: "Shoulders", CHEST: "Chest", BICEPS: "Biceps", TRICEPS: "Triceps",
+  FOREARM: "Forearms",
+};
+const LEVELS = [["fresh", "Fresh"], ["light", "Light"], ["worked", "Worked"], ["fried", "Fried"]];
+const levelOf = (m) => (m >= 12 ? "fried" : m >= 6 ? "worked" : m >= 2 ? "light" : "fresh");
+
+/** {muscle: {load, by: Map(source -> minutes), last, sore}} for now. */
+function muscleState() {
+  const now = Date.now();
+  const out = {};
+  const add = (m, minutes, src, date) => {
+    const o = out[m] || (out[m] = { load: 0, by: new Map(), last: null, sore: false, d14: 0 });
+    o.load += minutes;
+    o.by.set(src, (o.by.get(src) || 0) + minutes);
+    if (!o.last || date > o.last) o.last = date;
+  };
+  for (const a of J.activities || []) {
+    const ageH = (now - new Date(a.date.replace(" ", "T")).getTime()) / 36e5;
+    if (ageH < 0 || ageH > 24 * 14) continue;
+    const fade = Math.pow(0.5, ageH / 25);
+    const pieces = [];
+    for (const r of a.rounds || []) for (const s of r.sets) {
+      if (s.rest || !s.mp) continue;
+      const sec = typeof s.a === "number" && typeof s.b === "number" ? s.b - s.a : 45;
+      pieces.push([s.mp, s.ms || [], sec / 60, s.ex]);
+    }
+    if (!pieces.length && a.mus) pieces.push([a.mus[0], a.mus[1], (a.min || 0) * a.mus[2], a.name || a.label]);
+    for (const [main, sup, min, src] of pieces) {
+      for (const m of main) { add(m, ageH <= 240 ? min * fade : 0, src, a.date); out[m].d14 += min; }
+      for (const m of sup) { add(m, ageH <= 240 ? min * 0.4 * fade : 0, src, a.date); out[m].d14 += min * 0.4; }
+    }
+    if (ageH <= 72) for (const m of a.sore || []) (out[m] || (out[m] = { load: 0, by: new Map(), last: a.date, sore: false, d14: 0 })).sore = true;
+  }
+  return out;
+}
+
+// Simple front and back figures; each muscle is one or two shapes.
+const BODY = {
+  front: [
+    ["SHOULDERS", "ellipse", [31, 50, 7, 8]], ["SHOULDERS", "ellipse", [89, 50, 7, 8]],
+    ["CHEST", "rect", [38, 45, 21, 19, 6]], ["CHEST", "rect", [61, 45, 21, 19, 6]],
+    ["BICEPS", "ellipse", [29, 74, 5, 13]], ["BICEPS", "ellipse", [91, 74, 5, 13]],
+    ["FOREARM", "ellipse", [27, 112, 4.5, 15]], ["FOREARM", "ellipse", [93, 112, 4.5, 15]],
+    ["ABS", "rect", [51, 67, 18, 42, 5]],
+    ["OBLIQUES", "rect", [42, 70, 8, 34, 4]], ["OBLIQUES", "rect", [70, 70, 8, 34, 4]],
+    ["HIPS", "ellipse", [49, 121, 7, 5]], ["HIPS", "ellipse", [71, 121, 7, 5]],
+    ["QUADS", "ellipse", [47, 156, 7.5, 25]], ["QUADS", "ellipse", [73, 156, 7.5, 25]],
+    ["ADDUCTORS", "ellipse", [56, 146, 3, 13]], ["ADDUCTORS", "ellipse", [64, 146, 3, 13]],
+    ["CALVES", "ellipse", [48, 211, 5, 19]], ["CALVES", "ellipse", [72, 211, 5, 19]],
+  ],
+  back: [
+    ["TRAPS", "path", "M60 33L80 45L60 72L40 45Z"],
+    ["SHOULDERS", "ellipse", [31, 50, 7, 8]], ["SHOULDERS", "ellipse", [89, 50, 7, 8]],
+    ["LATS", "path", "M40 52L53 62L55 100L43 92Z"], ["LATS", "path", "M80 52L67 62L65 100L77 92Z"],
+    ["TRICEPS", "ellipse", [29, 74, 5, 13]], ["TRICEPS", "ellipse", [91, 74, 5, 13]],
+    ["FOREARM", "ellipse", [27, 112, 4.5, 15]], ["FOREARM", "ellipse", [93, 112, 4.5, 15]],
+    ["LOWER_BACK", "rect", [52, 88, 16, 24, 4]],
+    ["GLUTES", "ellipse", [51, 128, 9, 10]], ["GLUTES", "ellipse", [69, 128, 9, 10]],
+    ["ABDUCTORS", "ellipse", [41, 130, 3, 9]], ["ABDUCTORS", "ellipse", [79, 130, 3, 9]],
+    ["HAMSTRINGS", "ellipse", [49, 163, 7, 22]], ["HAMSTRINGS", "ellipse", [71, 163, 7, 22]],
+    ["CALVES", "ellipse", [49, 208, 6, 17]], ["CALVES", "ellipse", [71, 208, 6, 17]],
+  ],
+};
+
+function figure(side, state, onPick) {
+  const root = svg("svg", { viewBox: "0 0 120 246", class: "body-fig", role: "img", "aria-label": side === "front" ? "Front" : "Back" });
+  // Silhouette.
+  const sil = svg("g", { class: "body-sil" }, root);
+  svg("circle", { cx: 60, cy: 17, r: 11 }, sil);
+  svg("rect", { x: 54, y: 26, width: 12, height: 10, rx: 3 }, sil);
+  svg("path", { d: "M34 40Q60 34 86 40L84 112Q82 126 80 132L40 132Q38 126 36 112Z" }, sil);
+  svg("rect", { x: 22, y: 42, width: 13, height: 52, rx: 6.5 }, sil);
+  svg("rect", { x: 85, y: 42, width: 13, height: 52, rx: 6.5 }, sil);
+  svg("rect", { x: 21, y: 94, width: 11, height: 44, rx: 5.5 }, sil);
+  svg("rect", { x: 88, y: 94, width: 11, height: 44, rx: 5.5 }, sil);
+  svg("rect", { x: 39, y: 124, width: 20, height: 68, rx: 9 }, sil);
+  svg("rect", { x: 61, y: 124, width: 20, height: 68, rx: 9 }, sil);
+  svg("rect", { x: 41, y: 190, width: 16, height: 46, rx: 7 }, sil);
+  svg("rect", { x: 63, y: 190, width: 16, height: 46, rx: 7 }, sil);
+  for (const [m, kind, g] of BODY[side]) {
+    const st = state[m];
+    const lv = st ? levelOf(st.load) : "fresh";
+    const attrs = { class: `mus lv-${lv}${st && st.sore ? " sore" : ""}`, "data-m": m };
+    let node;
+    if (kind === "ellipse") node = svg("ellipse", { ...attrs, cx: g[0], cy: g[1], rx: g[2], ry: g[3] }, root);
+    else if (kind === "rect") node = svg("rect", { ...attrs, x: g[0], y: g[1], width: g[2], height: g[3], rx: g[4] }, root);
+    else node = svg("path", { ...attrs, d: g }, root);
+    node.addEventListener("click", () => onPick(m));
+  }
+  return root;
+}
+
+function bodyCard() {
+  const state = muscleState();
+  const card = el("div", "card body-card");
+  const head = el("div", "chart-head");
+  head.append(el("div", "chart-title", "Body · right now"), el("div", "chart-sum", "tap a muscle"));
+  card.append(head);
+  const figs = el("div", "body-figs");
+  const pick = (m) => openSheet(MUSCLE_NAMES[m] || m, () => muscleView(m));
+  for (const side of ["front", "back"]) {
+    const col = el("div", "body-col");
+    col.append(figure(side, state, pick), el("span", "body-side", side === "front" ? "Front" : "Back"));
+    figs.append(col);
+  }
+  card.append(figs);
+  const lg = el("div", "legend body-legend");
+  for (const [lv, name] of LEVELS) { const it = el("span"); it.append(el("i", "lv-" + lv), document.createTextNode(name)); lg.append(it); }
+  const so = el("span"); so.append(el("i", "lv-sore"), document.createTextNode("Sore")); lg.append(so);
+  card.append(lg);
+
+  const loaded = Object.entries(state).filter(([, s]) => s.load >= 6).sort((a, b) => b[1].load - a[1].load).map(([m]) => MUSCLE_NAMES[m]);
+  const idle = Object.keys(MUSCLE_NAMES).filter((m) => !state[m] || state[m].d14 < 1).map((m) => MUSCLE_NAMES[m]);
+  const notes = el("div", "body-notes");
+  if (loaded.length) notes.append(el("p", null, "🔥 Most loaded: " + loaded.slice(0, 5).join(", ") + (loaded.length > 5 ? ` +${loaded.length - 5}` : "")));
+  if (idle.length) notes.append(el("p", null, "💤 Not trained in 2 weeks: " + idle.join(", ")));
+  card.append(notes);
+  return card;
+}
+
+function muscleView(m) {
+  const state = muscleState()[m] || { load: 0, by: new Map(), last: null, sore: false, d14: 0 };
+  const v = el("div");
+  const lv = levelOf(state.load);
+  const top = el("div", "card");
+  const kv = el("div", "kv");
+  const pair = (b, s) => { const d = el("div"); d.append(el("b", null, b), el("span", null, s)); kv.append(d); };
+  pair(LEVELS.find((x) => x[0] === lv)[1], "right now");
+  pair(state.load >= 0.5 ? Math.round(state.load) + " min" : "0", "load left");
+  pair(state.last ? shortDay(state.last) : "–", "last worked");
+  top.append(kv);
+  if (state.sore) top.append(el("p", "stat-sub mv-last", "🩹 You noted soreness here in the last 3 days."));
+  const bar = el("div", "lv-bar");
+  const fill = el("span", "lv-" + lv);
+  fill.style.width = Math.min(100, Math.round((state.load / 16) * 100)) + "%";
+  bar.append(fill);
+  top.append(bar, el("p", "stat-sub mv-last", "Load fades by half about every day; most of it is gone after 3 days."));
+  v.append(top);
+
+  if (state.by.size) {
+    v.append(el("h2", "section-title", "Where the load comes from"));
+    const card = el("div", "card records");
+    for (const [src, min] of [...state.by].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
+      if (min < 0.2) continue;
+      const row = el("div", "record");
+      const left = el("div", "record-label");
+      if (isMove(src)) left.append(moveLink(src)); else left.textContent = src;
+      row.append(left, el("div", "record-value", Math.round(min) + " min"));
+      card.append(row);
+    }
+    v.append(card);
+  } else {
+    v.append(el("p", "empty", "Nothing has worked this muscle in the last 10 days."));
+  }
+  const acts = (J.activities || []).filter((a) => (a.rounds || []).some((r) => r.sets.some((s) => (s.mp || []).includes(m) || (s.ms || []).includes(m)))
+    || (a.mus && (a.mus[0].includes(m) || a.mus[1].includes(m)))).slice(0, 6);
+  if (acts.length) {
+    v.append(el("h2", "section-title", "Recent sessions"));
+    for (const a of acts) v.append(activityRow(a));
+  }
+  return v;
+}
+
+function isMove(name) {
+  return (J.activities || []).some((a) => (a.rounds || []).some((r) => r.sets.some((s) => s.ex === name)));
 }
 
 // ---------- Wrapped ----------
