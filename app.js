@@ -359,6 +359,9 @@ function recoveryCard() {
 }
 
 /** New heaviest loads and records from the last few weeks. */
+// A ball's weight is a fixed standard (9 kg wall ball), not a strength load — never a "heaviest" PR.
+const LIGHT_IMPLEMENT = /\bball\b/i;
+
 function highlights() {
   const out = [];
   const since = iso(new Date(Date.now() - 21 * 864e5));
@@ -371,7 +374,7 @@ function highlights() {
     }
   }
   // Only real improvements count: a first-ever load isn't a highlight.
-  for (const [ex, b] of best) if (b.date >= since && !b.first) out.push(["🏋️", `${ex} ${b.kg} kg`, "heaviest yet", b.date]);
+  for (const [ex, b] of best) if (b.date >= since && !b.first && !LIGHT_IMPLEMENT.test(ex)) out.push(["🏋️", `${ex} ${b.kg} kg`, "heaviest yet", b.date]);
   for (const e of maxEfforts()) {
     if (e.date >= since) out.push(["⚡", `${e.ex} ${e.n === 1 && e.kg ? e.kg + " kg" : e.n + (e.unit === "cal" ? " cal" : " reps")}`, "max effort · " + fmtWindow(e.win), e.date]);
   }
@@ -1077,7 +1080,7 @@ function renderBests(v) {
   v.append(el("h2", "section-title", "Heaviest loads"));
   const best = new Map();
   for (const a of (J.activities || []).slice().reverse()) for (const r of a.rounds || []) for (const s of r.sets) {
-    if (!s.rest && s.kg && s.kg >= ((best.get(s.ex) || {}).kg || 0)) best.set(s.ex, { kg: s.kg, date: a.date.slice(0, 10) });
+    if (!s.rest && s.kg && !LIGHT_IMPLEMENT.test(s.ex) && s.kg >= ((best.get(s.ex) || {}).kg || 0)) best.set(s.ex, { kg: s.kg, date: a.date.slice(0, 10) });
   }
   const list = el("div", "card records");
   if (!best.size) list.append(el("p", "empty", "No weighted movements yet."));
