@@ -1131,7 +1131,7 @@ function renderTrends() {
   const labels = ds.map((x) => x.key);
   const pick = (k) => ds.map((x) => (typeof x.v[k] === "number" ? x.v[k] : null));
 
-  v.append(weeksChart(Math.max(4, Math.round(range / 7))));
+  v.append(weeksChart(Math.max(2, Math.round(range / 7))));  // 14d->2w, 30d->4w, 90d->13w
 
   // Intensity of each session: average heart rate, colored by type.
   const sessions = (J.activities || []).filter((a) => a.hr && parseDay(a.date) >= parseDay(labels[0])).slice().reverse();
