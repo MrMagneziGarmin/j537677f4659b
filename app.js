@@ -1844,7 +1844,7 @@ function muscleView(m) {
   const kv = el("div", "kv");
   const pair = (b, s) => { const d = el("div"); d.append(el("b", null, b), el("span", null, s)); kv.append(d); };
   pair(LEVELS.find((x) => x[0] === lv)[1], "right now");
-  pair(state.load >= 0.5 ? Math.round(state.load) + " min" : "0", "load left");
+  pair(recoverShort(state.load), "to recover");
   pair(state.last ? shortDay(state.last) : "–", "last worked");
   top.append(kv);
   if (state.sore) top.append(el("p", "stat-sub mv-last", "🩹 You noted soreness here in the last 3 days."));
@@ -1852,7 +1852,7 @@ function muscleView(m) {
   const fill = el("span", "lv-" + lv);
   fill.style.width = Math.min(100, Math.round((state.load / 16) * 100)) + "%";
   bar.append(fill);
-  top.append(bar, el("p", "stat-sub mv-last", "Load fades by half about every day; most of it is gone after 3 days."));
+  top.append(bar, el("p", "stat-sub mv-last", recoverSentence(state.load)));
   v.append(top);
 
   const sources = muscleContributors(m);
@@ -1893,6 +1893,32 @@ function muscleView(m) {
     for (const a of acts) v.append(activityRow(a));
   }
   return v;
+}
+
+function recoverHours(load) {
+  return load < 2 ? 0 : 25 * Math.log2(load / 2);
+}
+
+function recoverShort(load) {
+  if (load < 2) return "–";
+  const h = recoverHours(load);
+  return h < 3 ? "Soon" : h < 36 ? "~1 day" : "~" + Math.round(h / 24) + " days";
+}
+
+function recoverSentence(load) {
+  if (load < 2) return "Recovered — ready to train.";
+  const h = recoverHours(load);
+  if (h < 2) return "Almost recovered.";
+  const t = new Date(Date.now() + h * 3600e3);
+  const part = partOfDay(t.getHours());
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const d1 = new Date(t); d1.setHours(0, 0, 0, 0);
+  const days = Math.round((d1 - d0) / 864e5);
+  const when = days <= 0 ? "later this " + part
+    : days === 1 ? "tomorrow " + part
+    : days < 7 ? t.toLocaleDateString(undefined, { weekday: "short" }) + " " + part
+    : "in about " + Math.round(h / 24) + " days";
+  return "Fresh again " + when + ".";
 }
 
 function ago(dateStr) {
