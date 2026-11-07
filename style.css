@@ -494,3 +494,23 @@ button { font: inherit; cursor: pointer; }
 .mus.iso { fill: var(--s2); fill-opacity: 1; }
 .mus.iso-sup { fill: var(--s2); fill-opacity: .42; }
 .mus.dim { fill: var(--lv-fresh); fill-opacity: .5; }
+
+/* engine block: Garmin heart-rate zones + cardio */
+.eng { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
+.eng-h { width: 56px; height: 56px; flex: none; }
+.eng-h .heart { fill: var(--critical); transform-box: fill-box; transform-origin: center; animation: beat 1.3s ease-in-out infinite; }
+@keyframes beat { 0%, 100% { transform: scale(1); } 16% { transform: scale(1.12); } 34% { transform: scale(1); } }
+.eng-big b { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.eng-big small { font-size: 13px; color: var(--muted); }
+.eng-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.zbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-top: 14px; gap: 1px; background: var(--grid); }
+.zbar span { display: block; }
+.zlist { margin-top: 11px; display: grid; gap: 8px; }
+.zrow { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.zrow i { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.zname { font-weight: 600; } .zrange { color: var(--muted); } .zrow b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.z1 { background: #8e8e93; } .z2 { background: #3987e5; } .z3 { background: #199e70; } .z4 { background: #f2802a; } .z5 { background: #ef3a32; }
+.eng-cardio-h { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-top: 18px; }
+.erow2 { display: flex; align-items: center; gap: 10px; margin-top: 9px; font-size: 15px; }
+.erow2 .edot { width: 9px; height: 9px; border-radius: 50%; background: var(--s2); flex: none; }
+.erow2 b { margin-left: auto; font-variant-numeric: tabular-nums; }

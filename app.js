@@ -1476,6 +1476,8 @@ function activityView(a) {
 
   const worked = sessionBodyCard(a);
   if (worked) v.append(worked);
+  const engine = engineCard(a);
+  if (engine) v.append(engine);
 
   if (a.hrs && a.hrs.some((x) => typeof x === "number")) v.append(hrChart(a));
 
@@ -1982,6 +1984,68 @@ function isMove(name) {
 }
 
 /** Muscles worked in ONE session (not faded): m -> {work, moves}, and move -> {main, sup}. */
+const HEART_PATH = "M0,2.5 C0,0.5 -2.2,-2 -5,-2 C-8.5,-2 -9,2 -9,3.2 C-9,6.2 -4.8,9.2 0,12 C4.8,9.2 9,6.2 9,3.2 C9,2 8.5,-2 5,-2 C2.2,-2 0,0.5 0,2.5 Z";
+const CARDIO_RE = /bike|assault|echo|airdyne|air ?dyne|\brow|ski|erg|\brun|cardio|treadmill/i;
+
+/** The engine movements of a session (bike/row/ski/run), summed in their real unit. */
+function cardioMoves(a) {
+  const by = new Map();
+  for (const r of a.rounds || []) for (const s of r.sets) {
+    if (s.rest || !s.n) continue;
+    if (!(s.unit === "cal" || CARDIO_RE.test(s.ex))) continue;
+    const o = by.get(s.ex) || { ex: s.ex, unit: s.unit || "reps", n: 0 };
+    o.n += s.n; by.set(s.ex, o);
+  }
+  if (!by.size && a.km && groupOf(a).key === "run") return [{ ex: a.name || a.label, unit: "m", n: Math.round(a.km * 1000) }];
+  return [...by.values()];
+}
+
+function engineCard(a) {
+  const zones = a.zones;
+  const cardio = cardioMoves(a);
+  if (!zones && !cardio.length && !a.hr) return null;
+  const card = el("div", "card");
+  card.append(el("div", "chart-title", "Engine"));
+
+  const head = el("div", "eng");
+  const hs = svg("svg", { viewBox: "-10 -4 20 18", class: "eng-h", "aria-hidden": "true" });
+  svg("path", { d: HEART_PATH, class: "heart" }, hs);
+  const meter = el("div", "eng-meter");
+  const big = el("div", "eng-big");
+  big.append(el("b", null, a.hr ? Math.round(a.hr) : "\u2013"), el("small", null, " avg bpm"));
+  meter.append(big);
+  const red = zones ? Math.round((zones[3][0] + zones[4][0]) / 60) : null;
+  meter.append(el("div", "eng-sub", [a.hrMax ? "max " + Math.round(a.hrMax) : null, red ? red + " min in the red" : null].filter(Boolean).join(" \u00b7 ")));
+  head.append(hs, meter);
+  card.append(head);
+
+  if (zones) {
+    const bar = el("div", "zbar");
+    zones.forEach((z, i) => { if (!z[0]) return; const seg = el("span", "z" + (i + 1)); seg.style.flex = String(z[0]); bar.append(seg); });
+    card.append(bar);
+    const list = el("div", "zlist");
+    zones.forEach((z, i) => {
+      const hi = i < 4 ? zones[i + 1][1] : (a.hrMax && Math.round(a.hrMax) > z[1] ? Math.round(a.hrMax) : null);
+      const row = el("div", "zrow");
+      row.append(el("i", "z" + (i + 1)), el("span", "zname", "Zone " + (i + 1)),
+        el("span", "zrange", z[1] + (hi ? "\u2013" + hi : "+") + " bpm"), el("b", null, z[0] ? fmtClock(z[0]) : "\u2013"));
+      list.append(row);
+    });
+    card.append(list);
+  }
+
+  if (cardio.length) {
+    card.append(el("div", "eng-cardio-h", "Cardio"));
+    for (const c of cardio) {
+      const r = el("div", "erow2");
+      r.append(el("span", "edot"), el("span", null, c.ex),
+        el("b", null, c.unit === "m" ? fmtInt(c.n) + " m" : c.unit === "cal" ? fmtInt(c.n) + " cal" : "\u00d7" + fmtInt(c.n)));
+      card.append(r);
+    }
+  }
+  return card;
+}
+
 function sessionMuscleData(a) {
   const byMuscle = new Map(), byMove = new Map();
   const addMuscle = (m, work, move) => {
