@@ -1985,25 +1985,32 @@ function isMove(name) {
 
 /** Muscles worked in ONE session (not faded): m -> {work, moves}, and move -> {main, sup}. */
 const HEART_PATH = "M0,2.5 C0,0.5 -2.2,-2 -5,-2 C-8.5,-2 -9,2 -9,3.2 C-9,6.2 -4.8,9.2 0,12 C4.8,9.2 9,6.2 9,3.2 C9,2 8.5,-2 5,-2 C2.2,-2 0,0.5 0,2.5 Z";
-const CARDIO_RE = /bike|assault|echo|airdyne|air ?dyne|\brow|ski|erg|\brun|cardio|treadmill/i;
+const ZONE_COLORS = ["#8e8e93", "#3987e5", "#199e70", "#f2802a", "#ef3a32"];
 
-/** The engine movements of a session (bike/row/ski/run), summed in their real unit. */
-function cardioMoves(a) {
+function zoneOf(hr, zones) {
+  let z = 1;
+  for (let i = 0; i < zones.length; i++) if (hr >= zones[i][1]) z = i + 1;
+  return z;
+}
+
+/** Every movement's average heart rate while you did it — the real engine signal (machines and bodyweight alike). */
+function engineDrivers(a) {
+  if (!a.hrs) return [];
   const by = new Map();
   for (const r of a.rounds || []) for (const s of r.sets) {
-    if (s.rest || !s.n) continue;
-    if (!(s.unit === "cal" || CARDIO_RE.test(s.ex))) continue;
-    const o = by.get(s.ex) || { ex: s.ex, unit: s.unit || "reps", n: 0 };
-    o.n += s.n; by.set(s.ex, o);
+    if (s.rest || typeof s.a !== "number" || typeof s.b !== "number") continue;
+    const hr = avgHr(a, s.a, s.b);
+    if (hr == null) continue;
+    const sec = s.b - s.a;
+    const o = by.get(s.ex) || { ex: s.ex, sec: 0, hrsec: 0 };
+    o.sec += sec; o.hrsec += hr * sec; by.set(s.ex, o);
   }
-  if (!by.size && a.km && groupOf(a).key === "run") return [{ ex: a.name || a.label, unit: "m", n: Math.round(a.km * 1000) }];
-  return [...by.values()];
+  return [...by.values()].map((o) => ({ ex: o.ex, hr: o.hrsec / o.sec })).sort((x, y) => y.hr - x.hr);
 }
 
 function engineCard(a) {
   const zones = a.zones;
-  const cardio = cardioMoves(a);
-  if (!zones && !cardio.length && !a.hr) return null;
+  if (!zones && !a.hr) return null;
   const card = el("div", "card");
   card.append(el("div", "chart-title", "Engine"));
 
@@ -2034,14 +2041,27 @@ function engineCard(a) {
     card.append(list);
   }
 
-  if (cardio.length) {
-    card.append(el("div", "eng-cardio-h", "Cardio"));
-    for (const c of cardio) {
-      const r = el("div", "erow2");
-      r.append(el("span", "edot"), el("span", null, c.ex),
-        el("b", null, c.unit === "m" ? fmtInt(c.n) + " m" : c.unit === "cal" ? fmtInt(c.n) + " cal" : "\u00d7" + fmtInt(c.n)));
-      card.append(r);
+  const drivers = engineDrivers(a);
+  if (drivers.length) {
+    card.append(el("div", "eng-cardio-h", "Heart rate by movement"));
+    const hrs = drivers.map((d) => d.hr);
+    const lo = Math.min(...hrs) - 3, hi = Math.max(...hrs);
+    const list = el("div", "src-list");
+    for (const d of drivers.slice(0, 9)) {
+      const z = zones ? zoneOf(d.hr, zones) : 4;
+      const row = el("div", "src-row");
+      const head = el("div", "src-head");
+      head.append(el("span", "src-name", d.ex), el("span", "src-pct", Math.round(d.hr) + " bpm"));
+      const track = el("div", "src-track");
+      const fill = el("span", "src-fill");
+      fill.style.width = Math.round(12 + 88 * ((d.hr - lo) / Math.max(1, hi - lo))) + "%";
+      fill.style.background = ZONE_COLORS[z - 1];
+      track.append(fill);
+      row.append(head, track);
+      list.append(row);
     }
+    card.append(list);
+    card.append(el("p", "stat-sub hr-note", "Average heart rate while doing each \u2014 your whole metcon is engine work (timing within a round is estimated)."));
   }
   return card;
 }
