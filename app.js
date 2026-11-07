@@ -66,7 +66,7 @@ async function unlock(event) {
   try {
     const box = await fetchBox();
     KEY = await deriveKey(input.value, box);
-    J = await openBox(KEY, box);
+    J = normalizeJournal(await openBox(KEY, box));
     SALT = box.salt;
     input.value = "";
     status.textContent = "";
@@ -77,6 +77,25 @@ async function unlock(event) {
   } finally {
     button.disabled = false;
   }
+}
+
+/** The band logs CrossFit classes as "HIIT" (Garmin has no CrossFit type); show the real name everywhere. */
+function normalizeJournal(j) {
+  if (!j) return j;
+  for (const a of j.activities || []) {
+    if (a.label === "HIIT") a.label = "CrossFit";
+    if (typeof a.name === "string") a.name = a.name.replace(/\bHIIT\b/g, "CrossFit");
+  }
+  const walk = (o) => {
+    if (!o || typeof o !== "object") return;
+    for (const k in o) {
+      const v = o[k];
+      if (typeof v === "string") o[k] = v.replace(/\bHIIT\b/g, "CrossFit");
+      else if (v && typeof v === "object") walk(v);
+    }
+  };
+  walk(j.coach);
+  return j;
 }
 
 function lock() {
@@ -98,7 +117,7 @@ async function refreshData() {
   try {
     const box = await fetchBox();
     if (box.salt !== SALT) { setSyncState("Password changed: lock and unlock"); return false; }
-    const next = await openBox(KEY, box);
+    const next = normalizeJournal(await openBox(KEY, box));
     if (next.updated === J.updated) return false;
     J = next;
     show(current, true);
