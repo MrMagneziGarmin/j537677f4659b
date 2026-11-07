@@ -474,3 +474,14 @@ button { font: inherit; cursor: pointer; }
 .body-notes p { margin: 10px 0 0; font-size: 14px; color: var(--text-2); }
 .lv-bar { height: 8px; border-radius: 4px; background: var(--grid); margin-top: 12px; overflow: hidden; }
 .lv-bar span { display: block; height: 100%; border-radius: 4px; }
+
+/* muscle contributors: share bars (% of this muscle's current load) */
+.src-list .src-row { padding: 11px 0; border-top: 0.5px solid var(--hair); }
+.src-list .src-row:first-child { border-top: 0; padding-top: 2px; }
+.src-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.src-name { font-weight: 600; }
+.src-list .move-link { font-weight: 600; }
+.src-pct { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text-2); flex: none; }
+.src-track { height: 7px; border-radius: 4px; background: var(--grid); margin-top: 7px; overflow: hidden; }
+.src-fill { display: block; height: 100%; border-radius: 4px; background: var(--s2); }
+.src-sub { font-size: 13px; color: var(--muted); margin-top: 5px; }

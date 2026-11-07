@@ -1855,16 +1855,32 @@ function muscleView(m) {
   top.append(bar, el("p", "stat-sub mv-last", "Load fades by half about every day; most of it is gone after 3 days."));
   v.append(top);
 
-  if (state.by.size) {
+  const sources = muscleContributors(m);
+  if (sources.length) {
     v.append(el("h2", "section-title", "Where the load comes from"));
-    const card = el("div", "card records");
-    for (const [src, min] of [...state.by].sort((a, b) => b[1] - a[1]).slice(0, 8)) {
-      if (min < 0.2) continue;
-      const row = el("div", "record");
-      const left = el("div", "record-label");
-      if (isMove(src)) left.append(moveLink(src)); else left.textContent = src;
-      row.append(left, el("div", "record-value", Math.round(min) + " min"));
+    const card = el("div", "card src-list");
+    const total = sources.reduce((s, o) => s + o.load, 0) || 1;
+    const top = sources.slice(0, 7), rest = sources.slice(7);
+    const roundedTop = top.map((o) => Math.round((o.load / total) * 100));
+    const addRow = (labelNode, sub, pct) => {
+      const row = el("div", "src-row");
+      const head = el("div", "src-head");
+      head.append(labelNode, el("span", "src-pct", pct + "%"));
+      const track = el("div", "src-track");
+      const fill = el("span", "src-fill");
+      fill.style.width = Math.max(3, pct) + "%";
+      track.append(fill);
+      row.append(head, track);
+      if (sub) row.append(el("div", "src-sub", sub));
       card.append(row);
+    };
+    top.forEach((o, i) => {
+      const label = o.isMove ? moveLink(o.src) : el("span", "src-name", o.src);
+      addRow(label, [contribFact(o), ago(o.last)].filter(Boolean).join(" · "), roundedTop[i]);
+    });
+    if (rest.length) {
+      const othersPct = Math.max(0, 100 - roundedTop.reduce((a, b) => a + b, 0));
+      addRow(el("span", "src-name", "Others"), rest.length + (rest.length === 1 ? " movement" : " movements"), othersPct);
     }
     v.append(card);
   } else {
@@ -1877,6 +1893,59 @@ function muscleView(m) {
     for (const a of acts) v.append(activityRow(a));
   }
   return v;
+}
+
+function ago(dateStr) {
+  const days = Math.round((parseDay(iso(new Date())) - parseDay(dateStr)) / 864e5);
+  return days <= 0 ? "today" : days === 1 ? "yesterday" : days + " days ago";
+}
+
+function contribFact(o) {
+  const parts = [];
+  if (o.reps) parts.push("×" + fmtInt(o.reps));
+  if (o.cal) parts.push(fmtInt(o.cal) + " cal");
+  if (o.dist) parts.push(fmtInt(o.dist) + " m");
+  if (o.min) parts.push(fmtInt(o.min) + " min");
+  return parts.join(" + ");
+}
+
+/** Each source's share of one muscle's current load: weighted, faded minutes for the ranking; the real amount done for the label. */
+function muscleContributors(m) {
+  const now = Date.now();
+  const by = new Map();
+  const get = (src, isMove) => {
+    let o = by.get(src);
+    if (!o) { o = { src, isMove, load: 0, reps: 0, cal: 0, dist: 0, min: 0, last: null }; by.set(src, o); }
+    return o;
+  };
+  for (const a of J.activities || []) {
+    const ageH = (now - new Date(a.date.replace(" ", "T")).getTime()) / 36e5;
+    if (ageH < 0 || ageH > 24 * 10) continue;
+    const fade = Math.pow(0.5, ageH / 25);
+    let anyMp = false;
+    for (const r of a.rounds || []) for (const sset of r.sets) {
+      if (sset.rest || !sset.mp) continue;
+      anyMp = true;
+      const isMain = sset.mp.includes(m), isSup = (sset.ms || []).includes(m);
+      if (!isMain && !isSup) continue;
+      const sec = typeof sset.a === "number" && typeof sset.b === "number" ? sset.b - sset.a : 45;
+      const o = get(sset.ex, true);
+      o.load += (sec / 60) * (isMain ? 1 : 0.4) * fade;
+      if (sset.n) o[sset.unit === "m" ? "dist" : sset.unit === "cal" ? "cal" : "reps"] += sset.n;
+      if (!o.last || a.date > o.last) o.last = a.date;
+    }
+    if (!anyMp && a.mus) {
+      const [main, sup, factor] = a.mus;
+      const isMain = main.includes(m), isSup = sup.includes(m);
+      if (isMain || isSup) {
+        const o = get(a.name || a.label, false);
+        o.load += (a.min || 0) * factor * (isMain ? 1 : 0.4) * fade;
+        o.min += a.min || 0;
+        if (!o.last || a.date > o.last) o.last = a.date;
+      }
+    }
+  }
+  return [...by.values()].filter((o) => o.load > 0.05).sort((x, y) => y.load - x.load);
 }
 
 function isMove(name) {
