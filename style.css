@@ -485,3 +485,12 @@ button { font: inherit; cursor: pointer; }
 .src-track { height: 7px; border-radius: 4px; background: var(--grid); margin-top: 7px; overflow: hidden; }
 .src-fill { display: block; height: 100%; border-radius: 4px; background: var(--s2); }
 .src-sub { font-size: 13px; color: var(--muted); margin-top: 5px; }
+
+/* per-session body map: isolate a movement or muscle */
+.body-cap { margin: 8px 0 2px; min-height: 18px; }
+.body-card .chips { margin-bottom: 0; }
+.mus.on { fill: var(--s2); }
+.mus.off { fill: var(--lv-fresh); fill-opacity: 1; }
+.mus.iso { fill: var(--s2); fill-opacity: 1; }
+.mus.iso-sup { fill: var(--s2); fill-opacity: .42; }
+.mus.dim { fill: var(--lv-fresh); fill-opacity: .5; }

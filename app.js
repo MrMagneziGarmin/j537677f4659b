@@ -1474,6 +1474,9 @@ function activityView(a) {
   const statCard = el("div", "card"); statCard.append(kv);
   v.append(statCard);
 
+  const worked = sessionBodyCard(a);
+  if (worked) v.append(worked);
+
   if (a.hrs && a.hrs.some((x) => typeof x === "number")) v.append(hrChart(a));
 
   const review = ((J.coach || {}).workouts || {})[String(a.id)];
@@ -1976,6 +1979,115 @@ function muscleContributors(m) {
 
 function isMove(name) {
   return (J.activities || []).some((a) => (a.rounds || []).some((r) => r.sets.some((s) => s.ex === name)));
+}
+
+/** Muscles worked in ONE session (not faded): m -> {work, moves}, and move -> {main, sup}. */
+function sessionMuscleData(a) {
+  const byMuscle = new Map(), byMove = new Map();
+  const addMuscle = (m, work, move) => {
+    const o = byMuscle.get(m) || { work: 0, moves: new Set() };
+    o.work += work; o.moves.add(move); byMuscle.set(m, o);
+  };
+  let any = false;
+  for (const r of a.rounds || []) for (const s of r.sets) {
+    if (s.rest || !s.mp) continue;
+    any = true;
+    const sec = typeof s.a === "number" && typeof s.b === "number" ? s.b - s.a : 45;
+    const min = sec / 60;
+    if (!byMove.has(s.ex)) byMove.set(s.ex, { main: s.mp.slice(), sup: (s.ms || []).slice() });
+    for (const m of s.mp) addMuscle(m, min, s.ex);
+    for (const m of s.ms || []) addMuscle(m, min * 0.4, s.ex);
+  }
+  if (!any && a.mus) {
+    const name = a.name || a.label;
+    byMove.set(name, { main: a.mus[0].slice(), sup: a.mus[1].slice() });
+    const min = (a.min || 0) * a.mus[2];
+    for (const m of a.mus[0]) addMuscle(m, min, name);
+    for (const m of a.mus[1]) addMuscle(m, min * 0.4, name);
+  }
+  return { byMuscle, byMove, max: Math.max(0, ...[...byMuscle.values()].map((o) => o.work)) };
+}
+
+function bodyFigures(shadeOf, onMuscle) {
+  const wrap = el("div", "body-figs");
+  for (const side of ["front", "back"]) {
+    const col = el("div", "body-col");
+    const root = svg("svg", { viewBox: side === "front" ? "-6 -6 112 210" : "-6 -6 112 234", class: "body-fig", "aria-hidden": "true" });
+    const shapes = ANATOMY[side].map(([m, flat]) => [m, smoothFlat(flat)]);
+    for (const [, d] of shapes) svg("path", { d, class: "sil-edge" }, root);
+    for (const [, d] of shapes) svg("path", { d, class: "sil-fill" }, root);
+    for (const [m, d] of shapes) {
+      if (!m) continue;
+      const sh = shadeOf(m);
+      const node = svg("path", { d, class: "mus " + (sh.cls || ""), "data-m": m }, root);
+      if (sh.op != null) node.style.fillOpacity = sh.op;
+      if (onMuscle) node.addEventListener("click", () => onMuscle(m));
+    }
+    col.append(root, el("span", "body-side", side === "front" ? "Front" : "Back"));
+    wrap.append(col);
+  }
+  return wrap;
+}
+
+function sessionBodyCard(a) {
+  const data = sessionMuscleData(a);
+  if (!data.byMuscle.size) return null;
+  const card = el("div", "card body-card");
+  card.append(el("div", "chart-title", "Worked"));
+  let sel = null;   // null | {type:"move", name} | {type:"muscle", m}
+  const figHolder = el("div");
+  const caption = el("p", "stat-sub body-cap");
+  const chips = el("div", "chips");
+
+  const shade = (m) => {
+    const w = data.byMuscle.get(m);
+    if (sel && sel.type === "move") {
+      const mv = data.byMove.get(sel.name);
+      if (mv.main.includes(m)) return { cls: "iso" };
+      if (mv.sup.includes(m)) return { cls: "iso-sup" };
+      return { cls: "dim" };
+    }
+    if (sel && sel.type === "muscle") return { cls: m === sel.m ? "iso" : "dim" };
+    if (!w) return { cls: "off" };
+    return { cls: "on", op: (0.32 + 0.68 * (w.work / (data.max || 1))).toFixed(2) };
+  };
+  const pickMuscle = (m) => {
+    if (!data.byMuscle.has(m)) return;          // only muscles this session touched
+    sel = sel && sel.type === "muscle" && sel.m === m ? null : { type: "muscle", m };
+    render();
+  };
+  const pickMove = (name) => {
+    sel = sel && sel.type === "move" && sel.name === name ? null : { type: "move", name };
+    render();
+  };
+
+  function render() {
+    figHolder.replaceChildren(bodyFigures(shade, pickMuscle));
+    for (const c of chips.children) {
+      const on = (c.dataset.move && sel && sel.type === "move" && sel.name === c.dataset.move) || (c.dataset.all && !sel);
+      c.classList.toggle("on", !!on);
+    }
+    const nm = (m) => MUSCLE_NAMES[m] || m;
+    if (!sel) caption.textContent = "Tap a movement or muscle to isolate it.";
+    else if (sel.type === "move") {
+      const mv = data.byMove.get(sel.name);
+      caption.textContent = `${sel.name} → ${mv.main.map(nm).join(", ")}` + (mv.sup.length ? ` (+ ${mv.sup.map(nm).join(", ")})` : "");
+    } else {
+      caption.textContent = `${nm(sel.m)} ← ${[...data.byMuscle.get(sel.m).moves].join(", ")}`;
+    }
+  }
+
+  const allChip = el("button", "chip", "All"); allChip.type = "button"; allChip.dataset.all = "1";
+  allChip.addEventListener("click", () => { sel = null; render(); });
+  chips.append(allChip);
+  for (const name of data.byMove.keys()) {
+    const b = el("button", "chip", name); b.type = "button"; b.dataset.move = name;
+    b.addEventListener("click", () => pickMove(name));
+    chips.append(b);
+  }
+  card.append(figHolder, caption, chips);
+  render();
+  return card;
 }
 
 // ---------- Wrapped ----------
