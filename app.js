@@ -2513,7 +2513,7 @@ let searchIndex = null;
 
 function buildSearchIndex() {
   const items = [];
-  for (const a of J.activities || []) {
+  for (const a of (J && J.activities) || []) {
     const parts = [a.name, a.label].filter(Boolean);
     const exNames = [];
     for (const r of a.rounds || []) for (const s of r.sets || []) { if (s.ex && !s.rest && !exNames.includes(s.ex)) exNames.push(s.ex); }
@@ -2526,7 +2526,7 @@ function buildSearchIndex() {
     });
   }
   const moves = new Map();
-  for (const a of J.activities || []) {
+  for (const a of (J && J.activities) || []) {
     for (const r of a.rounds || []) for (const s of r.sets || []) {
       if (!s.ex || s.rest) continue;
       let m = moves.get(s.ex);
@@ -2545,7 +2545,7 @@ function buildSearchIndex() {
       action: () => { closeSearch(); openMovement(name); },
     });
   }
-  for (const r of J.records || []) {
+  for (const r of (J && J.records) || []) {
     const label = r.label || r.name || r.ex || "";
     const value = r.kind === "time" ? fmtMS(r.value) : r.kind === "distance" ? (r.value / 1000).toFixed(2) + " km" : r.kind === "weight" ? r.value + " kg" : String(r.value || "");
     items.push({
@@ -2565,16 +2565,28 @@ function buildSearchIndex() {
       action: () => { closeSearch(); openSheet(MUSCLE_NAMES[m], () => muscleView(m)); },
     });
   }
+  for (const f of MOCK_FRIENDS) {
+    const p = MOCK_PROFILES[f.name];
+    const sub = (f.box === MY_BOX ? f.box : f.box + " · Different box") + " · " + f.streak + "-day streak";
+    items.push({
+      type: "friend", icon: "\u{1F464}",
+      title: f.name,
+      sub: sub,
+      text: (f.name + " " + f.box + " " + (p ? Object.keys(p.benchmarks || {}).join(" ") : "")).toLowerCase(),
+      action: () => { closeSearch(); openFriendProfile(f.name); },
+    });
+  }
   return items;
 }
 
 const GROUP_META = {
+  friend: { label: "Friends", cls: "si-friend" },
   workout: { label: "Workouts", cls: "si-workout" },
   movement: { label: "Movements", cls: "si-movement" },
   record: { label: "Records", cls: "si-record" },
   muscle: { label: "Muscles", cls: "si-muscle" },
 };
-const GROUP_ORDER = ["workout", "movement", "record", "muscle"];
+const GROUP_ORDER = ["friend", "workout", "movement", "record", "muscle"];
 
 function highlightTitle(titleEl, text, query) {
   const i = text.toLowerCase().indexOf(query.toLowerCase());
@@ -2652,9 +2664,374 @@ function closeSearch() {
   $("searchInput").blur();
 }
 
+// ---------- community (mock) ----------
+
+const MY_BOX = "CrossFit GoldFit";
+
+const MOCK_FRIENDS = [
+  { name: "Amit K.", avatar: "AK", color: "#007aff", streak: 12, score: 2840, weekWins: 3, trend: "+5%", box: "CrossFit TLV" },
+  { name: "Noa S.", avatar: "NS", color: "#ff2d55", streak: 8, score: 2610, weekWins: 2, trend: "+12%", box: "CrossFit GoldFit" },
+  { name: "Lior M.", avatar: "LM", color: "#af52de", streak: 10, score: 2450, weekWins: 2, trend: "+7%", box: "CrossFit GoldFit" },
+  { name: "Ido R.", avatar: "IR", color: "#34c759", streak: 22, score: 3150, weekWins: 5, trend: "+2%", box: "CrossFit TLV" },
+  { name: "Maya L.", avatar: "ML", color: "#ff9500", streak: 5, score: 1980, weekWins: 1, trend: "-3%", box: "CrossFit Ramat Gan" },
+];
+
+const MOCK_CHALLENGES = [
+  { title: "November Grind", desc: "Most training sessions this month", end: "Nov 30", joined: 4, icon: "🔥" },
+  { title: "Heavy Hitter", desc: "Highest total volume (kg) in a single workout", end: "Nov 15", joined: 3, icon: "🏋️" },
+  { title: "Engine Builder", desc: "Lowest avg HR on a 5km row", end: "Dec 1", joined: 2, icon: "❤️‍🔥" },
+];
+
+const MOCK_SHARED_WODS = [
+  {
+    name: "HYROX Doubles - 5 stations - 10 rds",
+    type: "HYROX", source: "Arbox", date: "Nov 4", box: "CrossFit GoldFit",
+    results: [
+      { name: "Bar", avatar: "B", color: null, time: "38:12", reps: 209, avgHR: 168, rank: 1 },
+      { name: "Noa S.", avatar: "NS", color: "#ff2d55", time: "40:05", reps: 209, avgHR: 170, rank: 2 },
+      { name: "Lior M.", avatar: "LM", color: "#af52de", time: "42:18", reps: 209, avgHR: 174, rank: 3 },
+    ]
+  },
+  {
+    name: "Bench + Pull-ups + Strict Press",
+    type: "CrossFit", source: "Arbox", date: "Nov 7", box: "CrossFit GoldFit",
+    results: [
+      { name: "Bar", avatar: "B", color: null, time: "45:00", reps: 209, avgHR: 146, rank: 1 },
+      { name: "Noa S.", avatar: "NS", color: "#ff2d55", time: "46:20", reps: 180, avgHR: 158, rank: 2 },
+      { name: "Lior M.", avatar: "LM", color: "#af52de", time: "48:10", reps: 175, avgHR: 152, rank: 3 },
+    ]
+  },
+  {
+    name: "21-15-9: Thrusters + Burpees",
+    type: "CrossFit", source: "Arbox", date: "Oct 30", box: "CrossFit GoldFit",
+    results: [
+      { name: "Lior M.", avatar: "LM", color: "#af52de", time: "8:30", reps: 90, avgHR: 176, rank: 1 },
+      { name: "Bar", avatar: "B", color: null, time: "8:42", reps: 90, avgHR: 178, rank: 2 },
+      { name: "Noa S.", avatar: "NS", color: "#ff2d55", time: "9:55", reps: 90, avgHR: 180, rank: 3 },
+    ]
+  },
+];
+
+const MOCK_PROFILES = {
+  "Amit K.": {
+    avatar: "AK", color: "#007aff", streak: 12, score: 2840, joined: "Jun 2024", gym: "CrossFit TLV",
+    lifts: { "Back Squat": "130 kg", "Deadlift": "170 kg", "Bench Press": "95 kg", "Clean & Jerk": "100 kg", "Snatch": "75 kg" },
+    runs: { "1 km": "3:52", "5 km": "22:10", "2 km Row": "7:15" },
+    benchmarks: { "Fran": "3:58", "Murph": "45:32", "Grace": "2:45", "Jackie": "8:30" },
+    recent: null,
+  },
+  "Noa S.": {
+    avatar: "NS", color: "#ff2d55", streak: 8, score: 2610, joined: "Aug 2024", gym: "CrossFit GoldFit",
+    lifts: { "Back Squat": "85 kg", "Deadlift": "110 kg", "Bench Press": "52 kg", "Clean & Jerk": "62 kg", "Snatch": "48 kg" },
+    runs: { "1 km": "4:15", "5 km": "24:30", "2 km Row": "8:02" },
+    benchmarks: { "Fran": "5:10", "Murph": "52:00", "Grace": "3:30", "Jackie": "8:10" },
+    recent: ["HYROX Doubles", "Bench + Pull-ups + Strict Press", "21-15-9: Thrusters + Burpees"],
+  },
+  "Lior M.": {
+    avatar: "LM", color: "#af52de", streak: 10, score: 2450, joined: "Mar 2024", gym: "CrossFit GoldFit",
+    lifts: { "Back Squat": "120 kg", "Deadlift": "150 kg", "Bench Press": "82 kg", "Clean & Jerk": "90 kg", "Snatch": "68 kg" },
+    runs: { "1 km": "3:45", "5 km": "21:30", "2 km Row": "7:20" },
+    benchmarks: { "Fran": "4:30", "Murph": "44:10", "Grace": "2:55" },
+    recent: ["HYROX Doubles", "21-15-9: Thrusters + Burpees", "Heavy Clean Complex"],
+  },
+  "Ido R.": {
+    avatar: "IR", color: "#34c759", streak: 22, score: 3150, joined: "Jan 2024", gym: "CrossFit TLV",
+    lifts: { "Back Squat": "155 kg", "Deadlift": "195 kg", "Bench Press": "110 kg", "Clean & Jerk": "120 kg", "Snatch": "92 kg" },
+    runs: { "1 km": "3:28", "5 km": "19:45", "2 km Row": "6:48" },
+    benchmarks: { "Fran": "3:58", "Murph": "38:20", "Grace": "2:10", "Jackie": "7:05" },
+    recent: null,
+  },
+  "Maya L.": {
+    avatar: "ML", color: "#ff9500", streak: 5, score: 1980, joined: "Sep 2024", gym: "CrossFit Ramat Gan",
+    lifts: { "Back Squat": "70 kg", "Deadlift": "90 kg", "Bench Press": "40 kg", "Clean & Jerk": "50 kg", "Snatch": "38 kg" },
+    runs: { "1 km": "4:40", "5 km": "26:15", "2 km Row": "8:30" },
+    benchmarks: { "Fran": "6:45", "Grace": "4:20", "Jackie": "9:50" },
+    recent: null,
+  },
+};
+
+function openFriendProfile(name) {
+  const p = MOCK_PROFILES[name];
+  if (!p) return;
+  openSheet(name, () => {
+    const wrap = el("div", "comm-profile");
+
+    const header = el("div", "comm-profile-header");
+    const av = el("div", "comm-avatar comm-avatar-lg");
+    av.textContent = p.avatar;
+    av.style.background = p.color;
+    const info = el("div", "comm-profile-info");
+    info.append(el("div", "comm-profile-name", name));
+    const gymLine = el("div", "comm-profile-gym-line");
+    gymLine.append(el("span", "stat-sub", p.gym));
+    if (p.gym !== MY_BOX) gymLine.append(el("span", "comm-box-tag comm-box-tag-diff", "Different box"));
+    else gymLine.append(el("span", "comm-box-tag comm-box-tag-same", "Your box"));
+    gymLine.append(el("span", "stat-sub", " · Joined " + p.joined));
+    info.append(gymLine);
+    header.append(av, info);
+    wrap.append(header);
+
+    const stats = el("div", "comm-profile-stats");
+    for (const [val, label] of [[p.streak + "", "Day streak"], [p.score.toLocaleString(), "Points"], [Object.keys(p.benchmarks).length + "", "Benchmarks"]]) {
+      const s = el("div", "comm-stat-item");
+      s.append(el("div", "comm-stat-val", val), el("div", "comm-stat-label", label));
+      stats.append(s);
+    }
+    wrap.append(stats);
+
+    wrap.append(el("h3", "comm-section-head", "Lift PRs"));
+    const liftCard = el("div", "card comm-records-card");
+    for (const [lift, val] of Object.entries(p.lifts)) {
+      const row = el("div", "comm-record-row");
+      row.append(el("span", "comm-record-label", lift), el("span", "comm-record-val", val));
+      liftCard.append(row);
+    }
+    wrap.append(liftCard);
+
+    wrap.append(el("h3", "comm-section-head", "Run / Row PRs"));
+    const runCard = el("div", "card comm-records-card");
+    for (const [run, val] of Object.entries(p.runs)) {
+      const row = el("div", "comm-record-row");
+      row.append(el("span", "comm-record-label", run), el("span", "comm-record-val", val));
+      runCard.append(row);
+    }
+    wrap.append(runCard);
+
+    wrap.append(el("h3", "comm-section-head", "Benchmark WODs"));
+    const benchCard = el("div", "card comm-records-card");
+    for (const [wod, val] of Object.entries(p.benchmarks)) {
+      const row = el("div", "comm-record-row");
+      row.append(el("span", "comm-record-label", wod), el("span", "comm-record-val", val));
+      benchCard.append(row);
+    }
+    wrap.append(benchCard);
+
+    if (p.recent) {
+      wrap.append(el("h3", "comm-section-head", "Recent Workouts"));
+      const recentCard = el("div", "card");
+      for (const w of p.recent) {
+        const row = el("div", "comm-feed-row");
+        const icon = el("div", "comm-avatar-sm");
+        icon.textContent = "\u{1F3CB}️";
+        icon.style.background = "rgba(0,122,255,.1)";
+        icon.style.fontSize = "16px";
+        row.append(icon, el("div", "comm-feed-body", w));
+        recentCard.append(row);
+      }
+      wrap.append(recentCard);
+    } else {
+      wrap.append(el("h3", "comm-section-head", "Recent Workouts"));
+      const noAccess = el("div", "card comm-no-access");
+      noAccess.append(el("div", "comm-no-access-icon", "\u{1F512}"));
+      noAccess.append(el("div", "comm-no-access-text", "Workout details are only visible for friends at the same box"));
+      noAccess.append(el("div", "stat-sub", name.split(" ")[0] + " trains at " + p.gym));
+      wrap.append(noAccess);
+    }
+
+    if (p.gym === MY_BOX) {
+      const compareBtn = el("button", "comm-join-btn", "Compare with " + name.split(" ")[0]);
+      compareBtn.addEventListener("click", () => { compareBtn.textContent = "Coming soon"; compareBtn.classList.add("comm-joined"); });
+      wrap.append(compareBtn);
+    } else {
+      const benchmarkBtn = el("button", "comm-join-btn comm-btn-outline", "Compare benchmarks with " + name.split(" ")[0]);
+      benchmarkBtn.addEventListener("click", () => { benchmarkBtn.textContent = "Coming soon"; benchmarkBtn.classList.add("comm-joined"); });
+      wrap.append(benchmarkBtn);
+      wrap.append(el("p", "stat-sub comm-cross-box-note", "Full workout comparison is available only for friends at " + MY_BOX));
+    }
+
+    return wrap;
+  });
+}
+
+const MOCK_H2H = [
+  { event: "Murph", you: "42:18", them: "44:50", themName: "Noa S.", win: true, date: "Nov 3" },
+  { event: "Fran", you: "4:12", them: "4:30", themName: "Lior M.", win: true, date: "Oct 28" },
+  { event: "Jackie", you: "7:45", them: "8:10", themName: "Noa S.", win: true, date: "Oct 20" },
+];
+
+const MOCK_FEED = [
+  { who: "Ido R.", avatar: "IR", color: "#34c759", action: "crushed a new Fran PR", time: "3:58", when: "2h ago", icon: "🏆" },
+  { who: "Amit K.", avatar: "AK", color: "#007aff", action: "completed Murph", time: "45:32", when: "5h ago", icon: "💪" },
+  { who: "Noa S.", avatar: "NS", color: "#ff2d55", action: "hit a 12-day streak", time: "", when: "1d ago", icon: "🔥" },
+  { who: "Maya L.", avatar: "ML", color: "#ff9500", action: "joined Heavy Hitter challenge", time: "", when: "2d ago", icon: "🏋️" },
+];
+
+function renderCommunity() {
+  const v = $("view-community");
+  v.replaceChildren();
+
+  v.append(el("h1", "large-title", "Community"));
+  v.append(el("p", "eyebrow", "See how you stack up"));
+
+  // --- Your rank card ---
+  const myFirst = (J && J.profile && J.profile.first) ? J.profile.first : "You";
+  const rankCard = el("div", "card comm-rank-card");
+  const rankTop = el("div", "comm-rank-top");
+  const myAvatar = el("div", "comm-avatar comm-avatar-me");
+  myAvatar.textContent = myFirst.charAt(0).toUpperCase();
+  const rankInfo = el("div", "comm-rank-info");
+  rankInfo.append(el("div", "comm-rank-name", myFirst));
+  rankInfo.append(el("div", "comm-rank-score", "2,720 pts"));
+  const rankBadge = el("div", "comm-rank-badge");
+  rankBadge.textContent = "#2";
+  rankTop.append(myAvatar, rankInfo, rankBadge);
+  const rankStats = el("div", "comm-rank-stats");
+  const statItems = [["15", "Day streak"], ["4", "Challenges"], ["7", "Week wins"]];
+  for (const [val, label] of statItems) {
+    const s = el("div", "comm-stat-item");
+    s.append(el("div", "comm-stat-val", val), el("div", "comm-stat-label", label));
+    rankStats.append(s);
+  }
+  rankCard.append(rankTop, rankStats);
+  v.append(rankCard);
+
+  // --- Shared Workouts (from Arbox, same box only) ---
+  v.append(el("h2", "section-title", "Shared Workouts"));
+  const boxHeader = el("div", "comm-box-header");
+  const boxIcon = el("span", "comm-box-icon", "🏠");
+  boxHeader.append(boxIcon, el("span", null, MY_BOX));
+  const boxSub = el("p", "stat-sub", "From Arbox classes at your box");
+  v.append(boxHeader, boxSub);
+  const myBoxWods = MOCK_SHARED_WODS.filter(w => w.box === MY_BOX);
+  for (const wod of myBoxWods) {
+    const card = el("div", "card comm-wod-card");
+    const top = el("div", "comm-wod-top");
+    const badge = el("span", "comm-wod-badge", wod.type);
+    top.append(badge, el("span", "stat-sub", wod.date));
+    card.append(top);
+    card.append(el("div", "comm-wod-name", wod.name));
+    const table = el("div", "comm-wod-table");
+    const thead = el("div", "comm-wod-thead");
+    for (const h of ["#", "", "Name", "Time", "Reps", "Avg HR"]) thead.append(el("span", "comm-wod-th", h));
+    table.append(thead);
+    for (const r of wod.results) {
+      const row = el("div", "comm-wod-row" + (r.name === myFirst || r.name === "Bar" ? " comm-wod-you" : ""));
+      row.append(el("span", "comm-wod-rank", "#" + r.rank));
+      const av = el("span", "comm-avatar-xs");
+      av.textContent = r.avatar;
+      av.style.background = r.color || "var(--tint)";
+      row.append(av);
+      const nameEl = el("span", "comm-wod-cell comm-wod-name-cell", r.name === "Bar" ? "You" : r.name);
+      if (r.name !== "Bar" && MOCK_PROFILES[r.name]) {
+        nameEl.classList.add("comm-tappable");
+        nameEl.addEventListener("click", () => openFriendProfile(r.name));
+      }
+      row.append(nameEl, el("span", "comm-wod-cell comm-wod-time-cell", r.time));
+      row.append(el("span", "comm-wod-cell", String(r.reps)));
+      const hrEl = el("span", "comm-wod-cell", String(r.avgHR));
+      hrEl.append(el("small", "stat-sub", " bpm"));
+      row.append(hrEl);
+      table.append(row);
+    }
+    card.append(table);
+    v.append(card);
+  }
+
+  // --- Activity feed ---
+  v.append(el("h2", "section-title", "Activity"));
+  const feedCard = el("div", "card");
+  for (const item of MOCK_FEED) {
+    const row = el("div", "comm-feed-row");
+    const av = el("div", "comm-avatar-sm");
+    av.textContent = item.avatar;
+    av.style.background = item.color;
+    if (MOCK_PROFILES[item.who]) { av.classList.add("comm-tappable"); av.addEventListener("click", () => openFriendProfile(item.who)); }
+    const body = el("div", "comm-feed-body");
+    const line1 = el("div", "comm-feed-line");
+    const nameSpan = el("strong", null, item.who);
+    if (MOCK_PROFILES[item.who]) { nameSpan.classList.add("comm-tappable"); nameSpan.addEventListener("click", () => openFriendProfile(item.who)); }
+    line1.append(nameSpan, document.createTextNode(" " + item.action));
+    body.append(line1);
+    if (item.time) body.append(el("div", "comm-feed-time", item.time));
+    const meta = el("div", "comm-feed-meta");
+    meta.append(el("span", null, item.icon + " "), el("span", "stat-sub", item.when));
+    row.append(av, body, meta);
+    feedCard.append(row);
+  }
+  v.append(feedCard);
+
+  // --- Leaderboard ---
+  v.append(el("h2", "section-title", "Leaderboard"));
+  const lbCard = el("div", "card comm-leaderboard");
+  const allFriends = [...MOCK_FRIENDS].sort((a, b) => b.score - a.score);
+  const myRank = 2;
+  let rank = 0;
+  for (const f of allFriends) {
+    rank++;
+    if (rank === myRank) {
+      const myRow = el("div", "comm-lb-row comm-lb-you");
+      const pos = el("div", "comm-lb-pos");
+      pos.textContent = "#" + myRank;
+      const av = el("div", "comm-avatar-sm comm-avatar-me");
+      av.textContent = myFirst.charAt(0).toUpperCase();
+      const info = el("div", "comm-lb-info");
+      info.append(el("div", "comm-lb-name", myFirst + " (You)"), el("div", "stat-sub", "2,720 pts · 15-day streak"));
+      const badge = el("div", "comm-lb-trend comm-trend-up");
+      badge.textContent = "+8%";
+      myRow.append(pos, av, info, badge);
+      lbCard.append(myRow);
+    }
+    const row = el("div", "comm-lb-row");
+    const pos = el("div", "comm-lb-pos");
+    pos.textContent = "#" + (rank >= myRank ? rank + 1 : rank);
+    const av = el("div", "comm-avatar-sm");
+    av.textContent = f.avatar;
+    av.style.background = f.color;
+    const info = el("div", "comm-lb-info");
+    const nameRow = el("div", "comm-lb-name-row");
+    const nameEl = el("span", "comm-lb-name", f.name);
+    if (MOCK_PROFILES[f.name]) { nameEl.classList.add("comm-tappable"); }
+    nameRow.append(nameEl);
+    if (f.box !== MY_BOX) {
+      const boxTag = el("span", "comm-box-tag", f.box);
+      nameRow.append(boxTag);
+    }
+    info.append(nameRow, el("div", "stat-sub", f.score.toLocaleString() + " pts · " + f.streak + "-day streak"));
+    const badge = el("div", "comm-lb-trend " + (f.trend.startsWith("+") ? "comm-trend-up" : "comm-trend-down"));
+    badge.textContent = f.trend;
+    if (MOCK_PROFILES[f.name]) { row.style.cursor = "pointer"; row.addEventListener("click", () => openFriendProfile(f.name)); }
+    row.append(pos, av, info, badge);
+    lbCard.append(row);
+  }
+  v.append(lbCard);
+
+  // --- Head-to-Head ---
+  v.append(el("h2", "section-title", "Head-to-Head"));
+  for (const h of MOCK_H2H) {
+    const card = el("div", "card comm-h2h-card");
+    const top = el("div", "comm-h2h-top");
+    top.append(el("div", "comm-h2h-event", h.event), el("div", "stat-sub", h.date));
+    const vs = el("div", "comm-h2h-vs");
+    const youSide = el("div", "comm-h2h-side " + (h.win ? "comm-h2h-winner" : ""));
+    youSide.append(el("div", "comm-h2h-label", "You"), el("div", "comm-h2h-time", h.you));
+    const vsLabel = el("div", "comm-h2h-vs-label");
+    vsLabel.textContent = "vs";
+    const themSide = el("div", "comm-h2h-side " + (!h.win ? "comm-h2h-winner" : ""));
+    themSide.append(el("div", "comm-h2h-label", h.themName), el("div", "comm-h2h-time", h.them));
+    vs.append(youSide, vsLabel, themSide);
+    card.append(top, vs);
+    v.append(card);
+  }
+
+  // --- Challenges ---
+  v.append(el("h2", "section-title", "Challenges"));
+  for (const c of MOCK_CHALLENGES) {
+    const card = el("div", "card comm-challenge");
+    const top = el("div", "comm-challenge-top");
+    top.append(el("span", "comm-challenge-icon", c.icon), el("span", "comm-challenge-title", c.title));
+    const desc = el("div", "stat-sub", c.desc);
+    const bottom = el("div", "comm-challenge-bottom");
+    bottom.append(el("span", "stat-sub", "Ends " + c.end), el("span", "comm-challenge-joined", c.joined + " friends joined"));
+    const joinBtn = el("button", "comm-join-btn", "Join");
+    joinBtn.addEventListener("click", () => { joinBtn.textContent = "Joined ✓"; joinBtn.classList.add("comm-joined"); });
+    card.append(top, desc, bottom, joinBtn);
+    v.append(card);
+  }
+}
+
 // ---------- shell ----------
 
-const RENDER = { home: renderHome, activity: renderActivity, sleep: renderSleep, trends: renderTrends, coach: renderCoach };
+const RENDER = { home: renderHome, activity: renderActivity, sleep: renderSleep, trends: renderTrends, coach: renderCoach, community: renderCommunity };
 
 function show(view, keepScroll) {
   if (view !== current) stopSpeaking();
