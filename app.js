@@ -1004,6 +1004,37 @@ function renderSleep() {
     labels: nights.map((x) => x.key), series: [{ cls: 1, values: scores }], min: 0, max: 100,
     tip: (i) => (typeof scores[i] === "number" ? [scores[i], shortDay(nights[i].key)] : null),
   }));
+
+  v.append(el("h2", "section-title", "Recovery"));
+  const hrvVals = nights.map((x) => (typeof x.v.hrv === "number" ? x.v.hrv : null));
+  if (hrvVals.some((x) => x !== null)) {
+    v.append(chartCard({
+      kind: "line", title: "HRV (overnight)", summary: [fmtInt(avg(hrvVals)), "ms avg"],
+      labels: nights.map((x) => x.key), series: [{ cls: 1, values: hrvVals }],
+      tip: (i) => (hrvVals[i] !== null ? [hrvVals[i] + " ms", shortDay(nights[i].key)] : null),
+    }));
+  }
+  const rhrVals = nights.map((x) => (typeof x.v.rhr === "number" ? x.v.rhr : null));
+  if (rhrVals.some((x) => x !== null)) {
+    v.append(chartCard({
+      kind: "line", title: "Resting heart rate", summary: [fmtInt(avg(rhrVals)), "bpm avg"],
+      labels: nights.map((x) => x.key), series: [{ cls: 2, values: rhrVals }],
+      tip: (i) => (rhrVals[i] !== null ? [rhrVals[i] + " bpm", shortDay(nights[i].key)] : null),
+    }));
+  }
+  const readyVals = nights.map((x) => (typeof x.v.ready === "number" ? x.v.ready : null));
+  if (readyVals.some((x) => x !== null)) {
+    v.append(chartCard({
+      kind: "line", title: "Readiness", summary: [fmtInt(avg(readyVals)), "avg"],
+      labels: nights.map((x) => x.key), series: [{ cls: 3, values: readyVals }], min: 0, max: 100,
+      tip: (i) => {
+        if (readyVals[i] === null) return null;
+        const lvl = nights[i].v.readyLevel;
+        const st = readinessStatus(lvl, readyVals[i]);
+        return [readyVals[i], shortDay(nights[i].key) + (st ? " · " + st.text : "")];
+      },
+    }));
+  }
 }
 
 // ---------- Trends ----------
@@ -2476,6 +2507,151 @@ function wrappedList() {
   return ps.length ? box : null;
 }
 
+// ---------- search ----------
+
+let searchIndex = null;
+
+function buildSearchIndex() {
+  const items = [];
+  for (const a of J.activities || []) {
+    const parts = [a.name, a.label].filter(Boolean);
+    const exNames = [];
+    for (const r of a.rounds || []) for (const s of r.sets || []) { if (s.ex && !s.rest && !exNames.includes(s.ex)) exNames.push(s.ex); }
+    items.push({
+      type: "workout", icon: "\u{1F3CB}",
+      title: parts.join(" · ") || "Workout",
+      sub: shortDay(a.date) + (a.dur ? " · " + fmtMS(a.dur) : "") + (a.cal ? " · " + a.cal + " kcal" : ""),
+      text: parts.concat(exNames, [a.date]).join(" ").toLowerCase(),
+      action: () => { closeSearch(); openActivity(a); },
+    });
+  }
+  const moves = new Map();
+  for (const a of J.activities || []) {
+    for (const r of a.rounds || []) for (const s of r.sets || []) {
+      if (!s.ex || s.rest) continue;
+      let m = moves.get(s.ex);
+      if (!m) { m = { count: 0, sessions: new Set() }; moves.set(s.ex, m); }
+      m.count += s.n || 1;
+      m.sessions.add(a.date);
+      m.last = a.date > (m.last || "") ? a.date : m.last;
+    }
+  }
+  for (const [name, info] of moves) {
+    items.push({
+      type: "movement", icon: "\u{1F4AA}",
+      title: name,
+      sub: info.sessions.size + " sessions · " + info.count + " reps · last " + shortDay(info.last),
+      text: name.toLowerCase(),
+      action: () => { closeSearch(); openMovement(name); },
+    });
+  }
+  for (const r of J.records || []) {
+    const label = r.label || r.name || r.ex || "";
+    const value = r.kind === "time" ? fmtMS(r.value) : r.kind === "distance" ? (r.value / 1000).toFixed(2) + " km" : r.kind === "weight" ? r.value + " kg" : String(r.value || "");
+    items.push({
+      type: "record", icon: "\u{1F3C6}",
+      title: label,
+      sub: value + (r.date ? " · " + shortDay(r.date) : ""),
+      text: label.toLowerCase(),
+      action: null,
+    });
+  }
+  for (const m of Object.keys(MUSCLE_NAMES)) {
+    items.push({
+      type: "muscle", icon: "\u{1F9BE}",
+      title: MUSCLE_NAMES[m],
+      sub: "Muscle group",
+      text: (MUSCLE_NAMES[m] + " " + m).toLowerCase(),
+      action: () => { closeSearch(); openSheet(MUSCLE_NAMES[m], () => muscleView(m)); },
+    });
+  }
+  return items;
+}
+
+const GROUP_META = {
+  workout: { label: "Workouts", cls: "si-workout" },
+  movement: { label: "Movements", cls: "si-movement" },
+  record: { label: "Records", cls: "si-record" },
+  muscle: { label: "Muscles", cls: "si-muscle" },
+};
+const GROUP_ORDER = ["workout", "movement", "record", "muscle"];
+
+function highlightTitle(titleEl, text, query) {
+  const i = text.toLowerCase().indexOf(query.toLowerCase());
+  if (i < 0) { titleEl.textContent = text; return; }
+  titleEl.append(
+    document.createTextNode(text.slice(0, i)),
+    Object.assign(el("mark", null, text.slice(i, i + query.length))),
+    document.createTextNode(text.slice(i + query.length))
+  );
+}
+
+function renderSearchResults(query) {
+  const container = $("searchResults");
+  container.replaceChildren();
+  if (!query.trim()) {
+    const hint = el("div", "search-hint");
+    hint.textContent = "Search workouts, movements, records, and muscles";
+    container.append(hint);
+    return;
+  }
+  if (!searchIndex) searchIndex = buildSearchIndex();
+  const q = query.trim().toLowerCase();
+  const words = q.split(/\s+/);
+  const matches = searchIndex.filter((item) => words.every((w) => item.text.includes(w)));
+  if (!matches.length) {
+    const empty = el("div", "search-empty");
+    empty.textContent = "No results for “" + query.trim() + "”";
+    container.append(empty);
+    return;
+  }
+  const groups = {};
+  for (const item of matches) {
+    if (!groups[item.type]) groups[item.type] = [];
+    groups[item.type].push(item);
+  }
+  for (const type of GROUP_ORDER) {
+    const items = groups[type];
+    if (!items) continue;
+    const meta = GROUP_META[type];
+    const section = el("div", "search-group");
+    section.append(el("div", "search-group-title", meta.label + " (" + items.length + ")"));
+    const shown = items.slice(0, 8);
+    for (const item of shown) {
+      const btn = el("button", "search-item");
+      btn.type = "button";
+      const icon = el("span", "search-item-icon " + meta.cls, item.icon);
+      const body = el("div", "search-item-body");
+      const title = el("div", "search-item-title");
+      highlightTitle(title, item.title.length > 50 ? item.title.slice(0, 50) + "…" : item.title, query.trim());
+      body.append(title, el("div", "search-item-sub", item.sub));
+      btn.append(icon, body);
+      if (item.action) btn.addEventListener("click", item.action);
+      section.append(btn);
+    }
+    if (items.length > 8) {
+      section.append(el("div", "search-item-sub", "+" + (items.length - 8) + " more"));
+    }
+    container.append(section);
+  }
+}
+
+function openSearch() {
+  searchIndex = null;
+  const overlay = $("search");
+  overlay.hidden = false;
+  const input = $("searchInput");
+  input.value = "";
+  $("searchResults").replaceChildren();
+  renderSearchResults("");
+  requestAnimationFrame(() => input.focus());
+}
+
+function closeSearch() {
+  $("search").hidden = true;
+  $("searchInput").blur();
+}
+
 // ---------- shell ----------
 
 const RENDER = { home: renderHome, activity: renderActivity, sleep: renderSleep, trends: renderTrends, coach: renderCoach };
@@ -2509,4 +2685,12 @@ document.addEventListener("DOMContentLoaded", () => {
   $("lockBtn").addEventListener("click", lock);
   $("syncBtn").addEventListener("click", sync);
   for (const b of document.querySelectorAll(".tab")) b.addEventListener("click", () => show(b.dataset.view));
+  $("searchBtn").addEventListener("click", openSearch);
+  $("searchCancel").addEventListener("click", closeSearch);
+  let searchTimer = 0;
+  $("searchInput").addEventListener("input", (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => renderSearchResults(e.target.value), 80);
+  });
+  $("search").addEventListener("keydown", (e) => { if (e.key === "Escape") closeSearch(); });
 });
