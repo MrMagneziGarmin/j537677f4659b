@@ -44,6 +44,9 @@
     <span id="barTitle" class="bar-title">Home</span>
     <span class="bar-actions">
       <span id="syncState" class="pill" role="status" hidden></span>
+      <button type="button" id="searchBtn" class="icon-btn" aria-label="Search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+      </button>
       <button type="button" id="syncBtn" class="icon-btn" aria-label="Sync with Garmin">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18.5 3v4.5H14M5.5 21v-4.5H10"/></svg>
       </button>
@@ -78,6 +81,15 @@
       <span>Sleep</span>
     </button>
   </nav>
+
+  <div id="search" class="search-overlay" hidden>
+    <div class="search-bar">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></svg>
+      <input id="searchInput" type="search" placeholder="Workouts, movements, records…" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button type="button" id="searchCancel" class="link">Cancel</button>
+    </div>
+    <div id="searchResults" class="search-results"></div>
+  </div>
 </div>
 </body>
 </html>
