@@ -674,3 +674,34 @@ button.card:active, a.card:active { transform: scale(.98); }
 .comm-btn-outline:active { opacity: .7; }
 .comm-btn-outline.comm-joined { background: #34c759; color: #fff; border-color: #34c759; }
 .comm-cross-box-note { text-align: center; margin-top: 8px; font-size: 12px; }
+
+/* ---------- RPE ---------- */
+.rpe-card { padding: 16px; }
+.rpe-body { display: flex; align-items: center; gap: 16px; }
+.rpe-big { font-size: 48px; font-weight: 800; min-width: 56px; text-align: center; line-height: 1; }
+.rpe-info { flex: 1; min-width: 0; }
+.rpe-label { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.rpe-track { height: 8px; background: var(--hair); border-radius: 4px; overflow: hidden; }
+.rpe-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+.rpe-sub { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.rpe-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; margin-top: 4px; }
+.rpe-1, .rpe-2 { background: rgba(168,213,162,.18); color: #5a9e54; }
+.rpe-3 { background: rgba(126,200,126,.18); color: #3f8f3f; }
+.rpe-4 { background: rgba(255,217,102,.18); color: #b08d00; }
+.rpe-5 { background: rgba(255,184,77,.18); color: #c47a00; }
+.rpe-6 { background: rgba(255,140,66,.18); color: #d06520; }
+.rpe-7 { background: rgba(255,107,58,.18); color: #cc4e1e; }
+.rpe-8 { background: rgba(232,69,69,.18); color: #c43030; }
+.rpe-9 { background: rgba(212,42,42,.18); color: #a82222; }
+.rpe-10 { background: rgba(183,28,28,.18); color: #8b1515; }
+@media (prefers-color-scheme: dark) {
+  .rpe-1, .rpe-2 { background: rgba(168,213,162,.12); color: #8fd488; }
+  .rpe-3 { background: rgba(126,200,126,.12); color: #7ec87e; }
+  .rpe-4 { background: rgba(255,217,102,.12); color: #ffd966; }
+  .rpe-5 { background: rgba(255,184,77,.12); color: #ffb84d; }
+  .rpe-6 { background: rgba(255,140,66,.12); color: #ff8c42; }
+  .rpe-7 { background: rgba(255,107,58,.12); color: #ff6b3a; }
+  .rpe-8 { background: rgba(232,69,69,.12); color: #e84545; }
+  .rpe-9 { background: rgba(212,42,42,.12); color: #d42a2a; }
+  .rpe-10 { background: rgba(183,28,28,.12); color: #cf2020; }
+}

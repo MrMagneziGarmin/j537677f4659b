@@ -1480,6 +1480,79 @@ function hrChart(a) {
   return card;
 }
 
+// ---------- RPE estimation ----------
+
+const RPE_LABELS = ["", "Rest", "Very light", "Light", "Moderate", "Somewhat hard", "Hard", "Very hard", "Very hard", "Extremely hard", "Max effort"];
+const RPE_COLORS = ["", "#a8d5a2", "#a8d5a2", "#7ec87e", "#ffd966", "#ffb84d", "#ff8c42", "#ff6b3a", "#e84545", "#d42a2a", "#b71c1c"];
+
+function estimateRPE(a) {
+  if (!a.hr && !a.te) return null;
+  let score = 0, signals = 0;
+
+  if (a.hr && a.hrMax && a.hrMax > 100) {
+    const pct = a.hr / a.hrMax;
+    score += pct <= 0.55 ? 1 : pct <= 0.65 ? 2 + (pct - 0.55) * 10 : pct <= 0.75 ? 3 + (pct - 0.65) * 20 : pct <= 0.85 ? 5 + (pct - 0.75) * 20 : pct <= 0.92 ? 7 + (pct - 0.85) * 28.6 : Math.min(10, 9 + (pct - 0.92) * 12.5);
+    signals++;
+  } else if (a.hr && a.zones) {
+    const topZone = a.zones[4][1] || a.zones[3][1] || 190;
+    const pct = a.hr / topZone;
+    score += Math.min(10, Math.max(1, pct * 10));
+    signals++;
+  }
+
+  if (a.te) {
+    score += a.te <= 1 ? 2 : a.te <= 2 ? 3 : a.te <= 3 ? 4.5 : a.te <= 4 ? 6 : Math.min(10, 7 + (a.te - 4) * 2);
+    signals++;
+  }
+
+  if (!signals) return null;
+  let base = score / signals;
+
+  if (a.min) base += a.min <= 15 ? -0.5 : a.min <= 30 ? 0 : a.min <= 45 ? 0.3 : a.min <= 60 ? 0.5 : Math.min(1, 0.5 + (a.min - 60) / 120);
+
+  if (a.zones) {
+    const total = a.zones.reduce((s, z) => s + z[0], 0) || 1;
+    const redPct = (a.zones[3][0] + a.zones[4][0]) / total;
+    if (redPct > 0.3) base += 0.5;
+  }
+
+  return Math.max(1, Math.min(10, Math.round(base)));
+}
+
+function rpeBadge(rpe) {
+  const wrap = el("span", "rpe-badge rpe-" + rpe);
+  wrap.textContent = rpe + " RPE";
+  wrap.title = RPE_LABELS[rpe] || "";
+  return wrap;
+}
+
+function rpeCard(a) {
+  const rpe = estimateRPE(a);
+  if (!rpe) return null;
+  const card = el("div", "card rpe-card");
+  card.append(el("div", "chart-title", "Estimated RPE"));
+  const body = el("div", "rpe-body");
+  const big = el("div", "rpe-big");
+  big.textContent = String(rpe);
+  big.style.color = RPE_COLORS[rpe];
+  const info = el("div", "rpe-info");
+  info.append(el("div", "rpe-label", RPE_LABELS[rpe]));
+  const bar = el("div", "rpe-track");
+  const fill = el("div", "rpe-fill");
+  fill.style.width = (rpe * 10) + "%";
+  fill.style.background = RPE_COLORS[rpe];
+  bar.append(fill);
+  info.append(bar);
+  const sub = [];
+  if (a.hr) sub.push(Math.round(a.hr) + " bpm avg");
+  if (a.te) sub.push("TE " + a.te.toFixed(1));
+  if (a.min) sub.push(Math.round(a.min) + " min");
+  info.append(el("div", "rpe-sub", sub.join(" · ")));
+  body.append(big, info);
+  card.append(body);
+  return card;
+}
+
 // ---------- a workout ----------
 
 function activityRow(a) {
@@ -1493,8 +1566,12 @@ function activityRow(a) {
   const main = el("div", "act-main");
   main.append(el("div", "act-title", a.name || a.label));
   const when = new Date(a.date.replace(" ", "T"));
-  main.append(el("div", "act-meta", [a.label, when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
-    Math.round(a.min) + " min", a.kcal ? Math.round(a.kcal) + " kcal" : null].filter(Boolean).join(" · ")));
+  const meta = el("div", "act-meta");
+  meta.textContent = [a.label, when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+    Math.round(a.min) + " min", a.kcal ? Math.round(a.kcal) + " kcal" : null].filter(Boolean).join(" · ");
+  main.append(meta);
+  const rpe = estimateRPE(a);
+  if (rpe) main.append(rpeBadge(rpe));
   row.append(badge, main, el("span", "chev", "›"));
   row.addEventListener("click", () => openActivity(a));
   return row;
@@ -1526,6 +1603,9 @@ function activityView(a) {
   pair(a.km ? a.km.toFixed(2) + " km" : a.teAn ? a.teAn.toFixed(1) : "–", a.km ? "Distance" : "Anaerobic TE");
   const statCard = el("div", "card"); statCard.append(kv);
   v.append(statCard);
+
+  const rpeEl = rpeCard(a);
+  if (rpeEl) v.append(rpeEl);
 
   const worked = sessionBodyCard(a);
   if (worked) v.append(worked);
