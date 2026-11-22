@@ -705,3 +705,15 @@ button.card:active, a.card:active { transform: scale(.98); }
   .rpe-9 { background: rgba(212,42,42,.12); color: #d42a2a; }
   .rpe-10 { background: rgba(183,28,28,.12); color: #cf2020; }
 }
+
+/* ---------- Movement RPE ---------- */
+.mrpe-row { padding: 10px 0; }
+.mrpe-row + .mrpe-row { border-top: 1px solid var(--hair); }
+.mrpe-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mrpe-name { font-weight: 600; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrpe-badges { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.mrpe-icon { font-size: 11px; opacity: .7; }
+.mrpe-detail { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.mrpe-track { height: 5px; background: var(--hair); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+.mrpe-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
+.set-rpe { font-weight: 700; font-size: 11px; padding: 1px 4px; border-radius: 4px; margin-left: 4px; }

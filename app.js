@@ -1553,6 +1553,111 @@ function rpeCard(a) {
   return card;
 }
 
+function heaviestLoads() {
+  const best = new Map();
+  for (const a of (J && J.activities) || []) for (const r of a.rounds || []) for (const s of r.sets) {
+    if (s.rest || !s.kg || LIGHT_IMPLEMENT.test(s.ex)) continue;
+    if (!best.has(s.ex) || s.kg > best.get(s.ex)) best.set(s.ex, s.kg);
+  }
+  return best;
+}
+
+function strengthRPE(s, prKg) {
+  if (!s.kg || !prKg || prKg <= 0) return null;
+  const pct = s.kg / prKg;
+  const reps = s.n || 1;
+  const e1rm = s.kg * (1 + reps / 30);
+  const intensity = e1rm / prKg;
+  if (intensity <= 0.5) return 2;
+  if (intensity <= 0.65) return 3;
+  if (intensity <= 0.75) return 4 + (intensity - 0.65) * 20;
+  if (intensity <= 0.85) return 6 + (intensity - 0.75) * 15;
+  if (intensity <= 0.95) return 7.5 + (intensity - 0.85) * 15;
+  return Math.min(10, 9 + (intensity - 0.95) * 20);
+}
+
+function conditioningRPE(hr, hrMax) {
+  if (!hr || !hrMax || hrMax <= 100) return null;
+  const pct = hr / hrMax;
+  if (pct <= 0.6) return 1;
+  if (pct <= 0.7) return 2 + (pct - 0.6) * 20;
+  if (pct <= 0.8) return 4 + (pct - 0.7) * 20;
+  if (pct <= 0.88) return 6 + (pct - 0.8) * 25;
+  if (pct <= 0.95) return 8 + (pct - 0.88) * 14.3;
+  return Math.min(10, 9 + (pct - 0.95) * 20);
+}
+
+function movementRPECard(a) {
+  const prs = heaviestLoads();
+  const groups = new Map();
+  for (const r of a.rounds || []) for (const s of r.sets) {
+    if (s.rest) continue;
+    let g = groups.get(s.ex);
+    if (!g) { g = { ex: s.ex, sets: [], hrs: [], totalKg: 0, maxKg: 0, totalReps: 0 }; groups.set(s.ex, g); }
+    g.sets.push(s);
+    if (s.kg) { g.totalKg += s.kg * (s.n || 1); g.maxKg = Math.max(g.maxKg, s.kg); }
+    g.totalReps += s.n || 1;
+    if (typeof s.a === "number") { const h = avgHr(a, s.a, s.b); if (h) g.hrs.push(h); }
+  }
+  if (!groups.size) return null;
+  const rows = [];
+  for (const [ex, g] of groups) {
+    const pr = prs.get(ex);
+    const sRPE = g.maxKg ? Math.round(strengthRPE(g.sets.reduce((best, s) => (!best || (s.kg || 0) > (best.kg || 0) ? s : best), null), pr)) : null;
+    const avgHrVal = g.hrs.length ? g.hrs.reduce((a, b) => a + b, 0) / g.hrs.length : null;
+    const cRPE = avgHrVal ? Math.round(conditioningRPE(avgHrVal, a.hrMax)) : null;
+    if (!sRPE && !cRPE) continue;
+    rows.push({ ex, sRPE, cRPE, kg: g.maxKg, reps: g.totalReps, hr: avgHrVal, pr, sets: g.sets.length });
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => (Math.max(b.sRPE || 0, b.cRPE || 0)) - (Math.max(a.sRPE || 0, a.cRPE || 0)));
+
+  const card = el("div", "card");
+  card.append(el("div", "chart-title", "RPE by movement"));
+  for (const r of rows) {
+    const row = el("div", "mrpe-row");
+    const head = el("div", "mrpe-head");
+    const name = el("span", "mrpe-name");
+    name.append(moveLink(r.ex));
+    head.append(name);
+    const badges = el("span", "mrpe-badges");
+    if (r.sRPE) {
+      const b = el("span", "rpe-badge rpe-" + r.sRPE);
+      b.textContent = r.sRPE;
+      b.title = "Strength: " + (RPE_LABELS[r.sRPE] || "");
+      const icon = el("span", "mrpe-icon", "\u{1F3CB}");
+      badges.append(icon, b);
+    }
+    if (r.cRPE) {
+      const b = el("span", "rpe-badge rpe-" + r.cRPE);
+      b.textContent = r.cRPE;
+      b.title = "Conditioning: " + (RPE_LABELS[r.cRPE] || "");
+      const icon = el("span", "mrpe-icon", "❤");
+      badges.append(icon, b);
+    }
+    head.append(badges);
+    row.append(head);
+    const detail = el("div", "mrpe-detail");
+    const parts = [];
+    if (r.kg) parts.push(r.kg + " kg" + (r.pr ? " / " + r.pr + " kg PR" : ""));
+    if (r.sets > 1) parts.push(r.sets + " sets");
+    parts.push(r.reps + (r.reps === 1 ? " rep" : " reps"));
+    if (r.hr) parts.push(Math.round(r.hr) + " bpm");
+    detail.textContent = parts.join(" · ");
+    row.append(detail);
+    const track = el("div", "mrpe-track");
+    const primary = r.sRPE || r.cRPE;
+    const fill = el("div", "mrpe-fill");
+    fill.style.width = (primary * 10) + "%";
+    fill.style.background = RPE_COLORS[primary];
+    track.append(fill);
+    row.append(track);
+    card.append(row);
+  }
+  card.append(el("p", "stat-sub", "\u{1F3CB} Strength RPE from load vs PR · ❤ Conditioning RPE from heart rate"));
+  return card;
+}
+
 // ---------- a workout ----------
 
 function activityRow(a) {
@@ -1607,6 +1712,9 @@ function activityView(a) {
   const rpeEl = rpeCard(a);
   if (rpeEl) v.append(rpeEl);
 
+  const mrpe = movementRPECard(a);
+  if (mrpe) v.append(mrpe);
+
   const worked = sessionBodyCard(a);
   if (worked) v.append(worked);
   const engine = engineCard(a);
@@ -1624,6 +1732,7 @@ function activityView(a) {
   }
 
   if (a.rounds && a.rounds.length) {
+    const prs = heaviestLoads();
     const c = el("div", "card");
     c.append(el("div", "chart-title", "Rounds"));
     const ol = el("ol", "rounds");
@@ -1640,6 +1749,8 @@ function activityView(a) {
         const hr = typeof s.a === "number" ? avgHr(a, s.a, s.b) : null;
         const right = el("span", "amt", setAmount(s));
         if (hr) right.append(el("small", "set-hr", ` ${Math.round(hr)} bpm`));
+        const setRpe = s.kg ? Math.round(strengthRPE(s, prs.get(s.ex))) : hr ? Math.round(conditioningRPE(hr, a.hrMax)) : null;
+        if (setRpe) { const b = el("small", "set-rpe rpe-" + setRpe); b.textContent = " " + setRpe; b.title = RPE_LABELS[setRpe]; right.append(b); }
         row.append(left, right);
         ul.append(row);
       }
